@@ -151,12 +151,34 @@ export default function App() {
     }
   }, [isAdmin, moduleActif]);
 
+  function normalizePiece(piece) {
+    const familleExiste = piece?.famille && CATALOGUE[piece.famille];
+    const sousFamilleExiste =
+      familleExiste && piece?.sousFamille && CATALOGUE[piece.famille].includes(piece.sousFamille);
+
+    return {
+      ...piece,
+      famille: piece?.famille || "",
+      sousFamille: sousFamilleExiste
+        ? piece.sousFamille
+        : familleExiste
+          ? CATALOGUE[piece.famille][0]
+          : piece?.sousFamille || "",
+      rupture: Number(piece?.rupture ?? 2),
+      quantite: Number(piece?.quantite ?? 0),
+    };
+  }
+
+  function normalizePieces(list) {
+    return (list || []).map(normalizePiece);
+  }
+
   useEffect(() => {
     async function startApp() {
       try {
         const remoteState = await loadAppState();
 
-        setPieces(remoteState.pieces || []);
+        setPieces(normalizePieces(remoteState.pieces || []));
         setHistory(remoteState.history || []);
         setManualOrders(remoteState.manualOrders || []);
         setOrderedAutoIds(remoteState.orderedAutoIds || []);
@@ -218,7 +240,7 @@ export default function App() {
           try {
             const data = JSON.parse(saved);
             setUsers(data.users?.length ? data.users : DEFAULT_USERS);
-            setPieces(data.pieces || []);
+            setPieces(normalizePieces(data.pieces || []));
             setHistory(data.history || []);
             setManualOrders(data.manualOrders || []);
             setOrderedAutoIds(data.orderedAutoIds || []);
@@ -242,7 +264,7 @@ export default function App() {
 
     const payload = {
       users,
-      pieces,
+      pieces: normalizePieces(pieces),
       history,
       manualOrders,
       orderedAutoIds,
@@ -398,7 +420,15 @@ export default function App() {
 
   function change(e) {
     const { name, value } = e.target;
-    if (name === "famille") return setForm({ ...form, famille: value, sousFamille: "" });
+
+    if (name === "famille") {
+      return setForm({
+        ...form,
+        famille: value,
+        sousFamille: value && CATALOGUE[value]?.length ? CATALOGUE[value][0] : "",
+      });
+    }
+
     setForm({ ...form, [name]: value });
   }
 
@@ -410,6 +440,10 @@ export default function App() {
     reader.readAsDataURL(file);
   }
 
+  function removePieceImage() {
+    setForm({ ...form, image: "" });
+  }
+
   function ajouter(e) {
     e.preventDefault();
 
@@ -418,14 +452,14 @@ export default function App() {
     }
 
     if (editingPieceId) {
-      const updatedPiece = {
+      const updatedPiece = normalizePiece({
         id: editingPieceId,
         ...form,
         quantite: Number(form.quantite || 0),
         rupture: Number(form.rupture || 2),
         updatedBy: currentUser?.login,
         updatedAt: new Date().toLocaleString("fr-FR"),
-      };
+      });
 
       setPieces(pieces.map((piece) => (piece.id === editingPieceId ? updatedPiece : piece)));
       addHistory("Modification pièce stock", `${form.designation} — ${form.famille} / ${form.sousFamille}`);
@@ -433,14 +467,14 @@ export default function App() {
       return;
     }
 
-    const newPiece = {
+    const newPiece = normalizePiece({
       id: Date.now(),
       ...form,
       quantite: Number(form.quantite || 0),
       rupture: Number(form.rupture || 2),
       createdBy: currentUser?.login,
       createdAt: new Date().toLocaleString("fr-FR"),
-    };
+    });
 
     setPieces([newPiece, ...pieces]);
     addHistory("Ajout pièce", `${form.designation} — ${form.famille} / ${form.sousFamille}`);
@@ -1968,8 +2002,18 @@ export default function App() {
                   <input name="rupture" value={form.rupture} onChange={change} placeholder="Point de rupture" />
                   <input name="prixPart" value={form.prixPart} onChange={change} placeholder="Prix particulier TTC" />
                   <input name="prixPro" value={form.prixPro} onChange={change} placeholder="Prix professionnel TTC" />
-                  <label className="imageInput">Ajouter image pièce<input type="file" accept="image/*" onChange={handleImage} hidden /></label>
-                  {form.image && <img className="imagePreview" src={form.image} alt="Aperçu pièce" />}
+                  <label className="imageInput">
+                    {form.image ? "Modifier image pièce" : "Ajouter image pièce"}
+                    <input type="file" accept="image/*" onChange={handleImage} hidden />
+                  </label>
+                  {form.image && (
+                    <>
+                      <img className="imagePreview" src={form.image} alt="Aperçu pièce" />
+                      <button type="button" className="delete" onClick={removePieceImage}>
+                        Supprimer image pièce
+                      </button>
+                    </>
+                  )}
                   <button>{editingPieceId ? "Enregistrer modification" : "Ajouter au stock"}</button>
                   {editingPieceId && <button type="button" className="delete" onClick={cancelEditPiece}>Annuler modification</button>}
                 </form>
