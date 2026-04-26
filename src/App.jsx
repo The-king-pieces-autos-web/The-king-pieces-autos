@@ -273,6 +273,69 @@ export default function App() {
     return (list || []).map(normalizePiece);
   }
 
+  function compressImageFile(file, maxWidth = 700, quality = 0.58) {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+
+      reader.onload = (event) => {
+        const img = new Image();
+
+        img.onload = () => {
+          const ratio = Math.min(1, maxWidth / img.width);
+          const width = Math.round(img.width * ratio);
+          const height = Math.round(img.height * ratio);
+
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, width, height);
+
+          resolve(canvas.toDataURL("image/jpeg", quality));
+        };
+
+        img.onerror = reject;
+        img.src = event.target.result;
+      };
+
+      reader.onerror = reject;
+      reader.readAsDataURL(file);
+    });
+  }
+
+  function removeHeavyImagesForLocalStorage(payload) {
+    return {
+      ...payload,
+      pieces: (payload.pieces || []).map((piece) => ({
+        ...piece,
+        image: piece.image ? "" : "",
+      })),
+      manualOrders: (payload.manualOrders || []).map((order) => ({
+        ...order,
+        image: order.image ? "" : "",
+      })),
+      orderArchives: (payload.orderArchives || []).map((archive) => ({
+        ...archive,
+        image: archive.image ? "" : "",
+      })),
+    };
+  }
+
+  function safeLocalStorageSet(key, value) {
+    try {
+      localStorage.setItem(key, value);
+    } catch (error) {
+      console.warn("LocalStorage plein : sauvegarde locale allégée.", error);
+      try {
+        const data = JSON.parse(value);
+        localStorage.setItem(key, JSON.stringify(removeHeavyImagesForLocalStorage(data)));
+      } catch {
+        localStorage.removeItem(key);
+      }
+    }
+  }
+
   useEffect(() => {
     async function startApp() {
       try {
@@ -318,7 +381,7 @@ export default function App() {
           setUsers(DEFAULT_USERS);
         }
 
-        localStorage.setItem(
+        safeLocalStorageSet(
           "king_app_full",
           JSON.stringify({
             users: remoteUsers?.length ? remoteUsers : DEFAULT_USERS,
@@ -374,7 +437,7 @@ export default function App() {
       savedAt: new Date().toISOString(),
     };
 
-    localStorage.setItem("king_app_full", JSON.stringify(payload));
+    safeLocalStorageSet("king_app_full", JSON.stringify(payload));
     saveAppState(payload).catch((error) => {
       console.error("Sauvegarde Supabase impossible", error);
     });
@@ -542,12 +605,25 @@ export default function App() {
     setForm({ ...form, [name]: value });
   }
 
-  function handleImage(e) {
+  async function handleImage(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => setForm({ ...form, image: event.target.result });
-    reader.readAsDataURL(file);
+
+    if (!file.type.startsWith("image/")) {
+      return alert("Choisis un fichier image.");
+    }
+
+    if (file.size > 8 * 1024 * 1024) {
+      return alert("Image trop lourde. Choisis une image plus légère.");
+    }
+
+    try {
+      const compressedImage = await compressImageFile(file);
+      setForm({ ...form, image: compressedImage });
+    } catch (error) {
+      console.error("Compression image impossible", error);
+      alert("Impossible d'ajouter cette image. Essaie une autre image.");
+    }
   }
 
   function removePieceImage() {
