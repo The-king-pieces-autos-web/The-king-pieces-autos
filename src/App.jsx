@@ -98,6 +98,50 @@ function getSousFamillesByFamille(value) {
   return findFamilyConfig(value)?.sousFamilles || [];
 }
 
+const FAMILLE_LABELS = Object.keys(CATALOGUE);
+
+function cleanFamilyText(value) {
+  return String(value || "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ");
+}
+
+function normalizeFamilleName(value) {
+  const cleaned = cleanFamilyText(value);
+
+  if (
+    cleaned === "distribution / kit chaine" ||
+    cleaned === "distribution/kit chaine" ||
+    cleaned === "distribution kit chaine" ||
+    cleaned.includes("distribution") && cleaned.includes("kit") && cleaned.includes("chaine")
+  ) {
+    return "Distribution / Kit chaîne";
+  }
+
+  if (
+    cleaned === "injection / carburation" ||
+    cleaned === "injection/carburation" ||
+    cleaned === "injection carburation" ||
+    cleaned === "injection / carburant" ||
+    cleaned === "injection/carburant" ||
+    cleaned === "injection carburant" ||
+    cleaned.includes("injection") && (cleaned.includes("carburant") || cleaned.includes("carburation"))
+  ) {
+    return "Injection / Carburant";
+  }
+
+  const found = FAMILLE_LABELS.find((label) => cleanFamilyText(label) === cleaned);
+  return found || value || "";
+}
+
+function getSousFamillesByFamille(value) {
+  const normalized = normalizeFamilleName(value);
+  return CATALOGUE[normalized] || [];
+}
+
 const MODULES = ["Stock", "Stock à commander", "Devis", "Clients", "Utilisateurs", "Historique"];
 
 export default function App() {
@@ -498,7 +542,10 @@ export default function App() {
     }
 
     if (name === "sousFamille") {
-      return setForm({ ...form, sousFamille: value });
+      return setForm({
+        ...form,
+        sousFamille: value,
+      });
     }
 
     setForm({ ...form, [name]: value });
