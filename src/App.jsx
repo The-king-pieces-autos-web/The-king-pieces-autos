@@ -34,26 +34,68 @@ const CATALOGUE = {
   "Capteurs / Électronique": ["Capteur PMH", "Capteur AAC", "Débitmètre", "Sonde lambda", "Capteur température", "Capteur pression huile", "Capteur pression turbo", "Capteur MAP", "Capteur ABS", "Relais", "Fusibles", "Comodos"],
 };
 
-const FAMILLE_ALIASES = {
-  "Distribution / Kit chaine": "Distribution / Kit chaîne",
-  "Distribution / Kit Chaîne": "Distribution / Kit chaîne",
-  "Distribution / Kit chaîne": "Distribution / Kit chaîne",
-  "Distribution / Kit Chaine": "Distribution / Kit chaîne",
+const FAMILY_CATALOG = [
+  { label: "Freinage", aliases: ["freinage"], sousFamilles: CATALOGUE["Freinage"] },
+  { label: "Filtration", aliases: ["filtration"], sousFamilles: CATALOGUE["Filtration"] },
+  {
+    label: "Distribution / Kit chaîne",
+    aliases: [
+      "distribution kit chaine",
+      "distribution kit chaîne",
+      "distribution / kit chaine",
+      "distribution / kit chaîne",
+      "distribution-kit-chaine",
+      "distribution-kit-chaîne",
+    ],
+    sousFamilles: ["Kit distribution", "Courroie distribution", "Galet tendeur", "Galet enrouleur", "Pompe à eau", "Kit chaîne", "Chaîne distribution", "Guide chaîne", "Tendeur chaîne", "Pignon distribution"],
+  },
+  { label: "Embrayage / Transmission", aliases: ["embrayage transmission", "embrayage / transmission"], sousFamilles: CATALOGUE["Embrayage / Transmission"] },
+  { label: "Moteur / Haut moteur", aliases: ["moteur haut moteur", "moteur / haut moteur"], sousFamilles: CATALOGUE["Moteur / Haut moteur"] },
+  { label: "Refroidissement", aliases: ["refroidissement"], sousFamilles: CATALOGUE.Refroidissement },
+  { label: "Supports moteur / boîte", aliases: ["supports moteur boite", "supports moteur / boite", "supports moteur / boîte"], sousFamilles: CATALOGUE["Supports moteur / boîte"] },
+  {
+    label: "Injection / Carburation",
+    aliases: [
+      "injection carburant",
+      "injection / carburant",
+      "injection carburation",
+      "injection / carburation",
+      "injection / carburant / carburation",
+    ],
+    sousFamilles: ["Injecteurs", "Pompe injection", "Pompe carburant", "Rampe injection", "Régulateur pression", "Corps papillon", "Capteur pédale accélérateur"],
+  },
+  { label: "Allumage / Préchauffage", aliases: ["allumage prechauffage", "allumage préchauffage", "allumage / préchauffage"], sousFamilles: CATALOGUE["Allumage / Préchauffage"] },
+  { label: "Suspension / Direction", aliases: ["suspension direction", "suspension / direction"], sousFamilles: CATALOGUE["Suspension / Direction"] },
+  { label: "Échappement", aliases: ["echappement", "échappement"], sousFamilles: CATALOGUE["Échappement"] },
+  { label: "Carrosserie / Éclairage", aliases: ["carrosserie eclairage", "carrosserie éclairage", "carrosserie / éclairage"], sousFamilles: CATALOGUE["Carrosserie / Éclairage"] },
+  { label: "Entretien / Fluides", aliases: ["entretien fluides", "entretien / fluides"], sousFamilles: CATALOGUE["Entretien / Fluides"] },
+  { label: "Capteurs / Électronique", aliases: ["capteurs electronique", "capteurs électronique", "capteurs / électronique"], sousFamilles: CATALOGUE["Capteurs / Électronique"] },
+];
 
-  "Injection / Carburation": "Injection / Carburant",
-  "Injection / carburant": "Injection / Carburant",
-  "Injection / Carburant": "Injection / Carburant",
-  "Injection / Carburant / Carburation": "Injection / Carburant",
-};
+function normalizeTextKey(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function findFamilyConfig(value) {
+  const key = normalizeTextKey(value);
+  return FAMILY_CATALOG.find((family) => {
+    if (normalizeTextKey(family.label) === key) return true;
+    return (family.aliases || []).some((alias) => normalizeTextKey(alias) === key);
+  });
+}
 
 function normalizeFamilleName(value) {
   if (!value) return "";
-  return FAMILLE_ALIASES[value] || value;
+  return findFamilyConfig(value)?.label || value;
 }
 
 function getSousFamillesByFamille(value) {
-  const normalized = normalizeFamilleName(value);
-  return CATALOGUE[normalized] || [];
+  return findFamilyConfig(value)?.sousFamilles || [];
 }
 
 const MODULES = ["Stock", "Stock à commander", "Devis", "Clients", "Utilisateurs", "Historique"];
@@ -160,7 +202,7 @@ export default function App() {
     image: "",
   });
 
-  const familles = Object.keys(CATALOGUE);
+  const familles = FAMILY_CATALOG.map((family) => family.label);
   const sousFamillesDisponibles = form.famille ? getSousFamillesByFamille(form.famille) : [];
   const sousFamillesAffichees = familleActive ? getSousFamillesByFamille(familleActive) : [];
   const isAdmin = currentUser?.role === "Admin";
@@ -177,16 +219,14 @@ export default function App() {
   function normalizePiece(piece) {
     const normalizedFamille = normalizeFamilleName(piece?.famille || "");
     const sousFamilles = getSousFamillesByFamille(normalizedFamille);
-    const familleExiste = Boolean(normalizedFamille && sousFamilles.length > 0);
-    const sousFamilleExiste =
-      familleExiste && piece?.sousFamille && sousFamilles.includes(piece.sousFamille);
+    const sousFamilleExiste = piece?.sousFamille && sousFamilles.includes(piece.sousFamille);
 
     return {
       ...piece,
       famille: normalizedFamille,
       sousFamille: sousFamilleExiste
         ? piece.sousFamille
-        : familleExiste
+        : sousFamilles.length > 0
           ? sousFamilles[0]
           : piece?.sousFamille || "",
       rupture: Number(piece?.rupture ?? 2),
@@ -458,10 +498,7 @@ export default function App() {
     }
 
     if (name === "sousFamille") {
-      return setForm({
-        ...form,
-        sousFamille: value,
-      });
+      return setForm({ ...form, sousFamille: value });
     }
 
     setForm({ ...form, [name]: value });
@@ -2207,7 +2244,7 @@ export default function App() {
                   <span>02</span>
                   <div>
                     <h3>Familles & sous-familles</h3>
-                    <p>Clique sur une famille pour voir toutes ses sous-familles.</p>
+                    <p>Toutes les sous-familles sont visibles directement sous chaque famille.</p>
                   </div>
                 </div>
 
@@ -2217,71 +2254,75 @@ export default function App() {
                     <small>Afficher tout le stock</small>
                   </button>
 
-                  {familles.map((famille) => (
-                    <button
-                      key={famille}
-                      className={familleActive === famille ? "selected" : ""}
-                      onClick={() => setFamilleActive(famille)}
-                    >
-                      <strong>{famille}</strong>
-                      <small>{getSousFamillesByFamille(famille)?.length || 0} sous-famille(s)</small>
-                    </button>
-                  ))}
-                </div>
+                  {familles.map((famille) => {
+                    const sousFamilles = getSousFamillesByFamille(famille);
+                    const selectedFamily = normalizeFamilleName(familleActive) === normalizeFamilleName(famille);
 
-                {familleActive && (
-                  <div
-                    style={{
-                      marginTop: "18px",
-                      background: "#f8fbff",
-                      border: "1px solid rgba(191, 212, 255, 0.85)",
-                      borderRadius: "18px",
-                      padding: "14px",
-                    }}
-                  >
-                    <h4 style={{ margin: "0 0 12px", color: "#08275f" }}>
-                      Sous-familles — {familleActive}
-                    </h4>
-
-                    {sousFamillesAffichees.length === 0 && (
-                      <div className="empty">Aucune sous-famille trouvée pour cette famille.</div>
-                    )}
-
-                    <div
-                      style={{
-                        display: "grid",
-                        gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
-                        gap: "10px",
-                      }}
-                    >
-                      {sousFamillesAffichees.map((sf) => (
+                    return (
+                      <div
+                        key={famille}
+                        style={{
+                          border: selectedFamily ? "2px solid #123f8f" : "1px solid rgba(191, 212, 255, 0.82)",
+                          borderRadius: "18px",
+                          background: selectedFamily ? "#eaf1ff" : "#fbfdff",
+                          padding: "12px",
+                        }}
+                      >
                         <button
-                          key={sf}
                           type="button"
-                          onClick={() => {
-                            setForm({
-                              ...form,
-                              famille: normalizeFamilleName(familleActive),
-                              sousFamille: sf,
-                            });
-                          }}
+                          className={selectedFamily ? "selected" : ""}
+                          onClick={() => setFamilleActive(famille)}
+                          style={{ width: "100%", marginBottom: "10px" }}
+                        >
+                          <strong>{famille}</strong>
+                          <small>{sousFamilles.length} sous-famille(s)</small>
+                        </button>
+
+                        <div
                           style={{
-                            border: form.famille === familleActive && form.sousFamille === sf ? "2px solid #123f8f" : "1px solid #bfd4ff",
-                            background: form.famille === familleActive && form.sousFamille === sf ? "#eaf1ff" : "white",
-                            color: "#10234d",
-                            borderRadius: "14px",
-                            padding: "10px",
-                            textAlign: "left",
-                            cursor: "pointer",
-                            fontWeight: "800",
+                            display: "grid",
+                            gridTemplateColumns: "repeat(auto-fill, minmax(145px, 1fr))",
+                            gap: "8px",
                           }}
                         >
-                          {sf}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                )}
+                          {sousFamilles.map((sf) => {
+                            const selectedSub = normalizeFamilleName(form.famille) === normalizeFamilleName(famille) && form.sousFamille === sf;
+
+                            return (
+                              <button
+                                key={`${famille}-${sf}`}
+                                type="button"
+                                onClick={() => {
+                                  const normalizedFamille = normalizeFamilleName(famille);
+                                  setFamilleActive(normalizedFamille);
+                                  setForm({
+                                    ...form,
+                                    famille: normalizedFamille,
+                                    sousFamille: sf,
+                                  });
+                                }}
+                                style={{
+                                  border: selectedSub ? "2px solid #123f8f" : "1px solid #bfd4ff",
+                                  background: selectedSub ? "#123f8f" : "white",
+                                  color: selectedSub ? "white" : "#10234d",
+                                  borderRadius: "14px",
+                                  padding: "9px",
+                                  textAlign: "left",
+                                  cursor: "pointer",
+                                  fontWeight: "800",
+                                  fontSize: "12px",
+                                  minHeight: "42px",
+                                }}
+                              >
+                                {sf}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>            </section>
 
             <section className="panel stockPanel">
