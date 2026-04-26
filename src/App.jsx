@@ -587,35 +587,84 @@ export default function App() {
           designation: piece.designation,
           reference: piece.refInterne || piece.refOrigine || "",
           prixTTC: prixChoisi,
+          quantite: 1,
           priceType,
           sourceStockId: piece.id,
+          confirmed: false,
         },
       ];
     });
   }
 
+  function updateDevisStockSelectionItem(itemId, priceType, field, value) {
+    setDevisStockSelection((prev) =>
+      prev.map((item) =>
+        item.id === itemId && item.priceType === priceType
+          ? {
+              ...item,
+              [field]:
+                field === "quantite" || field === "prixTTC"
+                  ? Number(value || 0)
+                  : value,
+            }
+          : item
+      )
+    );
+  }
+
+  function toggleConfirmDevisStockSelection(itemId, priceType) {
+    setDevisStockSelection((prev) =>
+      prev.map((item) =>
+        item.id === itemId && item.priceType === priceType
+          ? { ...item, confirmed: !item.confirmed }
+          : item
+      )
+    );
+  }
+
+  function confirmAllDevisStockSelection() {
+    setDevisStockSelection((prev) => prev.map((item) => ({ ...item, confirmed: true })));
+  }
+
+  function unconfirmAllDevisStockSelection() {
+    setDevisStockSelection((prev) => prev.map((item) => ({ ...item, confirmed: false })));
+  }
+
+  function removeFromDevisStockSelection(itemId, priceType) {
+    setDevisStockSelection((prev) =>
+      prev.filter((item) => !(item.id === itemId && item.priceType === priceType))
+    );
+  }
+
   function addSelectedPiecesToDevis() {
+    const confirmedItems = devisStockSelection.filter((item) => item.confirmed);
+
     if (devisStockSelection.length === 0) {
-      return alert("Sélectionne au moins une pièce à ajouter au devis.");
+      return alert("Ajoute d'abord des pièces dans la liste client.");
+    }
+
+    if (confirmedItems.length === 0) {
+      return alert("Coche au moins une pièce validée par le client avant de transférer au devis.");
     }
 
     if (!devisForm.numero) {
       setDevisForm((prev) => ({ ...prev, numero: nextDevisNumero() }));
     }
 
-    const groupedLines = devisStockSelection.map((piece) => ({
+    const groupedLines = confirmedItems.map((piece) => ({
       id: Date.now() + Math.random(),
       designation: piece.designation,
       reference: piece.reference,
-      quantite: 1,
-      prixTTC: piece.prixTTC,
+      quantite: Number(piece.quantite || 1),
+      prixTTC: Number(piece.prixTTC || 0),
       priceType: piece.priceType,
       sourceStockId: piece.sourceStockId,
     }));
 
     setDevisLines((prev) => [...prev, ...groupedLines]);
-    addHistory("Ajout groupé au devis", `${devisStockSelection.length} pièce(s) ajoutée(s) ensemble`);
-    setDevisStockSelection([]);
+    addHistory("Transfert sélection client au devis", `${confirmedItems.length} pièce(s) confirmée(s) transférée(s)`);
+
+    setDevisStockSelection((prev) => prev.filter((item) => !item.confirmed));
     setModuleActif("Devis");
   }
 
@@ -1932,52 +1981,147 @@ export default function App() {
                 <div className="panelTitle">
                   <span>CL</span>
                   <div>
-                    <h3>Sélection client en cours</h3>
-                    <p>Les pièces que tu cherches pour ton client restent ici avant de les envoyer ensemble vers le devis.</p>
+                    <h3>Liste de recherche client</h3>
+                    <p>
+                      Ajoute toutes les pièces trouvées ici. Ensuite coche uniquement les pièces validées par le client,
+                      puis transfère les pièces confirmées dans le devis.
+                    </p>
                   </div>
                 </div>
 
-                <div className="historyList">
-                  {devisStockSelection.map((item) => (
-                    <div className="historyItem" key={`${item.id}-${item.priceType}`}>
-                      <strong>{item.designation}</strong>
-                      <p>Référence interne : {item.reference || "-"}</p>
-                      <span>Tarif : {item.priceType === "pro" ? "Professionnel" : "Particulier"} — Prix TTC : {Number(item.prixTTC || 0).toFixed(2)} €</span>
-                    </div>
-                  ))}
+                <div className="actions" style={{ marginBottom: "16px" }}>
+                  <button onClick={confirmAllDevisStockSelection}>Tout valider</button>
+                  <button onClick={unconfirmAllDevisStockSelection}>Tout dévalider</button>
+                  <button onClick={addSelectedPiecesToDevis}>Transférer les pièces validées au devis</button>
+                  <button className="delete" onClick={clearDevisStockSelection}>Vider toute la liste</button>
                 </div>
 
-                <div className="actions" style={{ marginTop: "16px" }}>
-                  <button onClick={addSelectedPiecesToDevis}>Envoyer la sélection client au devis</button>
-                  <button className="delete" onClick={clearDevisStockSelection}>Vider sélection client</button>
+                <div style={{ overflowX: "auto" }}>
+                  <table
+                    style={{
+                      width: "100%",
+                      borderCollapse: "collapse",
+                      background: "white",
+                      borderRadius: "18px",
+                      overflow: "hidden",
+                      border: "1px solid rgba(191, 212, 255, 0.85)",
+                    }}
+                  >
+                    <thead>
+                      <tr style={{ background: "#123f8f", color: "white" }}>
+                        <th style={{ padding: "12px", textAlign: "left" }}>Validé</th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>Pièce</th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>Référence</th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>Tarif</th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>Qté</th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>Prix TTC</th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>Total</th>
+                        <th style={{ padding: "12px", textAlign: "left" }}>Action</th>
+                      </tr>
+                    </thead>
+
+                    <tbody>
+                      {devisStockSelection.map((item) => (
+                        <tr
+                          key={`${item.id}-${item.priceType}`}
+                          style={{
+                            borderBottom: "1px solid #d9e3f2",
+                            background: item.confirmed ? "#eaf1ff" : "white",
+                          }}
+                        >
+                          <td style={{ padding: "12px" }}>
+                            <input
+                              type="checkbox"
+                              checked={Boolean(item.confirmed)}
+                              onChange={() => toggleConfirmDevisStockSelection(item.id, item.priceType)}
+                              style={{ width: "18px", height: "18px" }}
+                            />
+                          </td>
+
+                          <td style={{ padding: "12px", fontWeight: "900", color: "#08275f" }}>
+                            {item.designation}
+                          </td>
+
+                          <td style={{ padding: "12px" }}>
+                            {item.reference || "-"}
+                          </td>
+
+                          <td style={{ padding: "12px" }}>
+                            {item.priceType === "pro" ? "Professionnel" : "Particulier"}
+                          </td>
+
+                          <td style={{ padding: "12px", width: "90px" }}>
+                            <input
+                              value={item.quantite}
+                              onChange={(e) => updateDevisStockSelectionItem(item.id, item.priceType, "quantite", e.target.value)}
+                              style={{
+                                width: "80px",
+                                border: "1px solid #bfd4ff",
+                                borderRadius: "10px",
+                                height: "38px",
+                                padding: "0 10px",
+                              }}
+                            />
+                          </td>
+
+                          <td style={{ padding: "12px", width: "120px" }}>
+                            <input
+                              value={item.prixTTC}
+                              onChange={(e) => updateDevisStockSelectionItem(item.id, item.priceType, "prixTTC", e.target.value)}
+                              style={{
+                                width: "110px",
+                                border: "1px solid #bfd4ff",
+                                borderRadius: "10px",
+                                height: "38px",
+                                padding: "0 10px",
+                              }}
+                            />
+                          </td>
+
+                          <td style={{ padding: "12px", fontWeight: "900" }}>
+                            {(Number(item.quantite || 0) * Number(item.prixTTC || 0)).toFixed(2)} €
+                          </td>
+
+                          <td style={{ padding: "12px" }}>
+                            <button
+                              className="delete"
+                              onClick={() => removeFromDevisStockSelection(item.id, item.priceType)}
+                            >
+                              Retirer
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              </section>
-            )}
 
-
-            {devisStockSelection.length > 0 && (
-              <section className="panel" style={{ marginBottom: "22px" }}>
-                <div className="panelTitle">
-                  <span>DV</span>
+                <div className="stats" style={{ marginBottom: 0 }}>
                   <div>
-                    <h3>Sélection devis groupée</h3>
-                    <p>Les pièces sélectionnées seront ajoutées ensemble dans le même devis en cours.</p>
+                    <span>Pièces dans la liste</span>
+                    <strong>{devisStockSelection.length}</strong>
                   </div>
-                </div>
-
-                <div className="historyList">
-                  {devisStockSelection.map((item) => (
-                    <div className="historyItem" key={`${item.id}-${item.priceType}`}>
-                      <strong>{item.designation}</strong>
-                      <p>Référence interne : {item.reference || "-"}</p>
-                      <span>Tarif : {item.priceType === "pro" ? "Professionnel" : "Particulier"} — Prix TTC : {Number(item.prixTTC || 0).toFixed(2)} €</span>
-                    </div>
-                  ))}
-                </div>
-
-                <div className="actions" style={{ marginTop: "16px" }}>
-                  <button onClick={addSelectedPiecesToDevis}>Ajouter toute la sélection au devis</button>
-                  <button className="delete" onClick={clearDevisStockSelection}>Vider sélection</button>
+                  <div>
+                    <span>Pièces validées</span>
+                    <strong>{devisStockSelection.filter((item) => item.confirmed).length}</strong>
+                  </div>
+                  <div>
+                    <span>Total validé</span>
+                    <strong>
+                      {devisStockSelection
+                        .filter((item) => item.confirmed)
+                        .reduce((sum, item) => sum + Number(item.quantite || 0) * Number(item.prixTTC || 0), 0)
+                        .toFixed(2)} €
+                    </strong>
+                  </div>
+                  <div>
+                    <span>Total liste</span>
+                    <strong>
+                      {devisStockSelection
+                        .reduce((sum, item) => sum + Number(item.quantite || 0) * Number(item.prixTTC || 0), 0)
+                        .toFixed(2)} €
+                    </strong>
+                  </div>
                 </div>
               </section>
             )}
@@ -2052,10 +2196,10 @@ export default function App() {
                       <div className="actions" onClick={(e) => e.stopPropagation()}>
                         <button onClick={() => vendre(piece.id)}>Vendu - retirer 1 du stock</button>
                         <button onClick={() => togglePieceForDevis(piece, "particulier")}>
-                          {devisStockSelection.some((item) => item.id === piece.id && item.priceType === "particulier") ? "Retirer prix particulier" : "Prix particulier"}
+                          {devisStockSelection.some((item) => item.id === piece.id && item.priceType === "particulier") ? "Retirer de la liste" : "Ajouter à la liste - prix particulier"}
                         </button>
                         <button onClick={() => togglePieceForDevis(piece, "pro")}>
-                          {devisStockSelection.some((item) => item.id === piece.id && item.priceType === "pro") ? "Retirer prix pro" : "Prix professionnel"}
+                          {devisStockSelection.some((item) => item.id === piece.id && item.priceType === "pro") ? "Retirer prix pro" : "Ajouter à la liste - prix professionnel"}
                         </button>
                         <button onClick={() => startEditPiece(piece)}>Modifier</button>
                         <button className="delete" onClick={() => supprimer(piece.id)}>Supprimer</button>
