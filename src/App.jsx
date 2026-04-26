@@ -140,6 +140,7 @@ export default function App() {
 
   const familles = Object.keys(CATALOGUE);
   const sousFamillesDisponibles = form.famille ? CATALOGUE[form.famille] || [] : [];
+  const sousFamillesAffichees = familleActive ? CATALOGUE[familleActive] || [] : [];
   const isAdmin = currentUser?.role === "Admin";
   const visibleModules = isAdmin
     ? MODULES
@@ -422,10 +423,19 @@ export default function App() {
     const { name, value } = e.target;
 
     if (name === "famille") {
+      const sousFamilles = CATALOGUE[value] || [];
+
       return setForm({
         ...form,
         famille: value,
-        sousFamille: value && CATALOGUE[value]?.length ? CATALOGUE[value][0] : "",
+        sousFamille: sousFamilles.length > 0 ? sousFamilles[0] : "",
+      });
+    }
+
+    if (name === "sousFamille") {
+      return setForm({
+        ...form,
+        sousFamille: value,
       });
     }
 
@@ -2136,8 +2146,12 @@ export default function App() {
                     {familles.map((f) => <option key={f}>{f}</option>)}
                   </select>
                   <select name="sousFamille" value={form.sousFamille} onChange={change} disabled={!form.famille}>
-                    <option value="">Sous-famille</option>
-                    {sousFamillesDisponibles.map((sf) => <option key={sf}>{sf}</option>)}
+                    <option value="">{form.famille ? "Choisir une sous-famille" : "Choisis d’abord une famille"}</option>
+                    {sousFamillesDisponibles.map((sf) => (
+                      <option key={sf} value={sf}>
+                        {sf}
+                      </option>
+                    ))}
                   </select>
                   <input name="refOrigine" value={form.refOrigine} onChange={change} placeholder="Référence origine" />
                   <input name="refInterne" value={form.refInterne} onChange={change} placeholder="Référence interne" />
@@ -2164,17 +2178,86 @@ export default function App() {
               </div>
 
               <div className="panel familiesPanel">
-                <div className="panelTitle"><span>02</span><div><h3>Familles & sous-familles</h3><p>Filtre et aperçu du catalogue.</p></div></div>
+                <div className="panelTitle">
+                  <span>02</span>
+                  <div>
+                    <h3>Familles & sous-familles</h3>
+                    <p>Clique sur une famille pour voir toutes ses sous-familles.</p>
+                  </div>
+                </div>
+
                 <div className="familyList">
-                  <button className={!familleActive ? "selected" : ""} onClick={() => setFamilleActive("")}>Toutes les familles</button>
+                  <button className={!familleActive ? "selected" : ""} onClick={() => setFamilleActive("")}>
+                    <strong>Toutes les familles</strong>
+                    <small>Afficher tout le stock</small>
+                  </button>
+
                   {familles.map((famille) => (
-                    <button key={famille} className={familleActive === famille ? "selected" : ""} onClick={() => setFamilleActive(famille)}>
-                      <strong>{famille}</strong><small>{CATALOGUE[famille].slice(0, 4).join(" • ")}</small>
+                    <button
+                      key={famille}
+                      className={familleActive === famille ? "selected" : ""}
+                      onClick={() => setFamilleActive(famille)}
+                    >
+                      <strong>{famille}</strong>
+                      <small>{CATALOGUE[famille]?.length || 0} sous-famille(s)</small>
                     </button>
                   ))}
                 </div>
-              </div>
-            </section>
+
+                {familleActive && (
+                  <div
+                    style={{
+                      marginTop: "18px",
+                      background: "#f8fbff",
+                      border: "1px solid rgba(191, 212, 255, 0.85)",
+                      borderRadius: "18px",
+                      padding: "14px",
+                    }}
+                  >
+                    <h4 style={{ margin: "0 0 12px", color: "#08275f" }}>
+                      Sous-familles — {familleActive}
+                    </h4>
+
+                    {sousFamillesAffichees.length === 0 && (
+                      <div className="empty">Aucune sous-famille trouvée pour cette famille.</div>
+                    )}
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))",
+                        gap: "10px",
+                      }}
+                    >
+                      {sousFamillesAffichees.map((sf) => (
+                        <button
+                          key={sf}
+                          type="button"
+                          onClick={() => {
+                            setForm({
+                              ...form,
+                              famille: familleActive,
+                              sousFamille: sf,
+                            });
+                          }}
+                          style={{
+                            border: form.famille === familleActive && form.sousFamille === sf ? "2px solid #123f8f" : "1px solid #bfd4ff",
+                            background: form.famille === familleActive && form.sousFamille === sf ? "#eaf1ff" : "white",
+                            color: "#10234d",
+                            borderRadius: "14px",
+                            padding: "10px",
+                            textAlign: "left",
+                            cursor: "pointer",
+                            fontWeight: "800",
+                          }}
+                        >
+                          {sf}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>            </section>
 
             <section className="panel stockPanel">
               <div className="panelTitle"><span>03</span><div><h3>Stock enregistré</h3><p>{results.length} résultat(s)</p></div></div>
