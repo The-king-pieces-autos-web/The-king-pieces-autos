@@ -231,7 +231,7 @@ export default function App() {
     refInterne: "",
     fournisseur: "",
     quantite: "",
-    rupture: "2",
+    rupture: "1",
     prixPart: "",
     prixPro: "",
     image: "",
@@ -450,7 +450,7 @@ export default function App() {
     }
   }, [clients]);
 
-  const ruptures = pieces.filter((p) => Number(p.quantite) <= Number(p.rupture));
+  const ruptures = pieces.filter((p) => Number(p.quantite) < Number(p.rupture));
 
   const results = useMemo(() => {
     return pieces.filter((p) => {
@@ -467,7 +467,7 @@ export default function App() {
   }, [clients, clientSearch]);
 
   const stockACommanderAuto = pieces.filter(
-    (p) => Number(p.quantite) <= Number(p.rupture) && !orderedAutoIds.includes(p.id)
+    (p) => Number(p.quantite) < Number(p.rupture) && !orderedAutoIds.includes(p.id)
   );
 
   const allOrders = [
@@ -673,7 +673,7 @@ export default function App() {
       refInterne: "",
       fournisseur: "",
       quantite: "",
-      rupture: "2",
+      rupture: "1",
       prixPart: "",
       prixPro: "",
       image: "",
@@ -709,7 +709,7 @@ export default function App() {
       refInterne: "",
       fournisseur: "",
       quantite: "",
-      rupture: "2",
+      rupture: "1",
       prixPart: "",
       prixPro: "",
       image: "",
@@ -2314,7 +2314,7 @@ export default function App() {
 
             <section className="contentGrid">
               <div className="panel formPanel">
-                <div className="panelTitle"><span>01</span><div><h3>{editingPieceId ? "Modifier une pièce" : "Ajouter une pièce"}</h3><p>Choisis une famille puis une sous-famille.</p></div></div>
+                <div className="panelTitle"><span>01</span><div><h3>{editingPieceId ? "Modifier une pièce" : "Ajouter une pièce"}</h3><p>Choisis une famille puis une sous-famille. Le stock à commander se déclenche seulement si la quantité est inférieure au stock minimum voulu.</p></div></div>
                 <form className="form" onSubmit={ajouter}>
                   <input name="designation" value={form.designation} onChange={change} placeholder="Nom de la pièce" />
                   <select name="famille" value={form.famille} onChange={change}>
@@ -2333,7 +2333,7 @@ export default function App() {
                   <input name="refInterne" value={form.refInterne} onChange={change} placeholder="Référence interne" />
                   <input name="fournisseur" value={form.fournisseur} onChange={change} placeholder="Fournisseur" />
                   <input name="quantite" value={form.quantite} onChange={change} placeholder="Quantité" />
-                  <input name="rupture" value={form.rupture} onChange={change} placeholder="Point de rupture" />
+                  <input name="rupture" value={form.rupture} onChange={change} placeholder="Stock minimum voulu" />
                   <input name="prixPart" value={form.prixPart} onChange={change} placeholder="Prix particulier TTC" />
                   <input name="prixPro" value={form.prixPro} onChange={change} placeholder="Prix professionnel TTC" />
                   <label className="imageInput">
@@ -2444,7 +2444,7 @@ export default function App() {
               {results.length === 0 && <div className="empty">Aucune pièce enregistrée.</div>}
               <div className="products">
                 {results.map((piece) => {
-                  const low = Number(piece.quantite) <= Number(piece.rupture);
+                  const low = Number(piece.quantite) < Number(piece.rupture);
                   return (
                     <article className="product clickable" key={piece.id} onClick={() => setSelectedPiece(piece)}>
                       {piece.image ? <img className="productImage" src={piece.image} alt={piece.designation} /> : <div className="noImage">Image pièce</div>}
@@ -2455,7 +2455,7 @@ export default function App() {
                         <div><small>Particulier</small><b>{piece.prixPart || 0} €</b></div>
                         <div><small>Professionnel</small><b>{piece.prixPro || 0} €</b></div>
                       </div>
-                      <div className="stockStatus"><strong>Stock : {piece.quantite}</strong><span className={low ? "danger" : "success"}>{low ? "Envoyé à commander" : "Disponible"}</span></div>
+                      <div className="stockStatus"><strong>Stock : {piece.quantite} / minimum : {piece.rupture}</strong><span className={low ? "danger" : "success"}>{low ? "À commander" : "Disponible"}</span></div>
                       <div className="actions" onClick={(e) => e.stopPropagation()}>
                         <button onClick={() => vendre(piece.id)}>Vendu - retirer 1 du stock</button>
                         <button onClick={() => togglePieceForDevis(piece, "particulier")}>
@@ -2857,14 +2857,14 @@ export default function App() {
             </section>
 
             <section className="panel stockPanel">
-              <div className="panelTitle"><span>02</span><div><h3>Liste des pièces à commander</h3><p>Automatique depuis le stock + ajouts manuels.</p></div></div>
+              <div className="panelTitle"><span>02</span><div><h3>Liste des pièces à commander</h3><p>Pièces dont le stock actuel est inférieur au stock minimum voulu + ajouts manuels.</p></div></div>
               <div className="actions" style={{ marginBottom: "20px" }}><button onClick={printOrders}>Imprimer bon de commande</button></div>
               {allOrders.length === 0 && <div className="empty">Aucune pièce à commander.</div>}
               <div className="products">
                 {allOrders.map((piece) => (
                   <article className="product" key={`${piece.orderType}-${piece.id}`}>
                     {piece.image && <img className="productImage" src={piece.image} alt={piece.designation} />}
-                    <div className="productTop"><div className="icon">{piece.orderType === "auto" ? "⚠" : "🛒"}</div><div><h4>{piece.designation}</h4><p>{piece.orderType === "auto" ? "Rupture automatique" : "Ajout manuel"}</p></div></div>
+                    <div className="productTop"><div className="icon">{piece.orderType === "auto" ? "⚠" : "🛒"}</div><div><h4>{piece.designation}</h4><p>{piece.orderType === "auto" ? "Réappro automatique" : "Ajout manuel"}</p></div></div>
                     <div className="productInfo">
                       <div><small>Référence</small><b>{piece.reference || piece.refInterne || piece.refOrigine || "-"}</b></div>
                       <div><small>Quantité</small><b>{piece.quantite || "-"}</b></div>
@@ -2983,7 +2983,7 @@ export default function App() {
             <div className="modalGrid">
               <p><b>Famille :</b> {selectedPiece.famille}</p><p><b>Sous-famille :</b> {selectedPiece.sousFamille}</p>
               <p><b>Référence origine :</b> {selectedPiece.refOrigine || "-"}</p><p><b>Référence interne :</b> {selectedPiece.refInterne || "-"}</p>
-              <p><b>Fournisseur :</b> {selectedPiece.fournisseur || "-"}</p><p><b>Stock :</b> {selectedPiece.quantite}</p>
+              <p><b>Fournisseur :</b> {selectedPiece.fournisseur || "-"}</p><p><b>Stock actuel :</b> {selectedPiece.quantite}</p><p><b>Stock minimum voulu :</b> {selectedPiece.rupture}</p>
               <p><b>Prix particulier :</b> {selectedPiece.prixPart || 0} €</p><p><b>Prix professionnel :</b> {selectedPiece.prixPro || 0} €</p>
             </div>
           </div>
