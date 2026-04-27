@@ -1263,34 +1263,39 @@ export default function App() {
 
   function createDevisFromRequest(request) {
     const requestedPieces = parseRequestedPieces(request.piecesDemandees);
+    const existingDevis = request.devis || null;
 
     setDevisForm({
-      numero: devisForm.numero || nextDevisNumero(),
-      client: request.client || "",
-      date: new Date().toISOString().slice(0, 10),
-      marque: request.marque || "",
-      modele: request.modele || "",
-      plaque: request.plaque || "",
-      vin: request.vin || "",
-      telephone: request.telephone || request.whatsapp || "",
-      origineDemande: request.type || "",
+      numero: existingDevis?.numero || devisForm.numero || nextDevisNumero(),
+      client: existingDevis?.client || request.client || "",
+      date: existingDevis?.date || new Date().toISOString().slice(0, 10),
+      marque: existingDevis?.marque || request.marque || "",
+      modele: existingDevis?.modele || request.modele || "",
+      plaque: existingDevis?.plaque || request.plaque || "",
+      vin: existingDevis?.vin || request.vin || "",
+      telephone: existingDevis?.telephone || request.telephone || request.whatsapp || "",
+      origineDemande: existingDevis?.origineDemande || request.type || "",
       demandeId: request.id,
-      notesInternes: request.notesInternes || "",
-      remiseType: "pourcentage",
-      remiseValue: "",
+      notesInternes: existingDevis?.notesInternes || request.notesInternes || "",
+      remiseType: existingDevis?.remiseType || "pourcentage",
+      remiseValue: existingDevis?.remiseValue || "",
     });
 
-    setDevisLines(
-      requestedPieces.map((piece, index) => ({
-        id: Date.now() + index,
-        designation: piece,
-        reference: "",
-        quantite: 1,
-        prixTTC: "",
-        priceType: "demande",
-        sourceRequestId: request.id,
-      }))
-    );
+    if (existingDevis?.lignes?.length) {
+      setDevisLines(existingDevis.lignes);
+    } else {
+      setDevisLines(
+        requestedPieces.map((piece, index) => ({
+          id: Date.now() + index,
+          designation: piece,
+          reference: "",
+          quantite: 1,
+          prixTTC: "",
+          priceType: "demande",
+          sourceRequestId: request.id,
+        }))
+      );
+    }
 
     setDevisLine({ designation: "", reference: "", quantite: "1", prixTTC: "", deuxOffres: false, fournisseur1: "", dateDispo1: "Sur place", reference2: "", prixTTC2: "", fournisseur2: "", dateDispo2: "", offreChoisie: "offre1" });
     setSelectedDevisRequest(null);
@@ -1298,8 +1303,8 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
 
     addHistory(
-      "Demande ouverte dans devis",
-      `${request.client || "-"} — ${requestedPieces.length} pièce(s) à chiffrer`
+      existingDevis ? "Réouverture devis depuis Cahier" : "Demande ouverte dans devis",
+      `${request.client || "-"} — ${requestedPieces.length} pièce(s)`
     );
   }
 
@@ -1538,7 +1543,9 @@ export default function App() {
   function saveDevis(status = "Brouillon") {
     if (!devisForm.client) return alert("Nom client obligatoire.");
     if (devisLines.length === 0) return alert("Ajoute au moins une ligne au devis.");
+
     const numero = devisForm.numero || nextDevisNumero();
+
     const savedDevis = {
       id: editingDevisId || Date.now(),
       ...devisForm,
@@ -1558,13 +1565,7 @@ export default function App() {
         : new Date().toLocaleString("fr-FR"),
       updatedAt: new Date().toLocaleString("fr-FR"),
     };
-    if (editingDevisId) {
-      setDevis(devis.map((d) => (d.id === editingDevisId ? savedDevis : d)));
-      addHistory("Modification devis", `${numero} — ${devisForm.client}`);
-    } else {
-      setDevis([savedDevis, ...devis]);
-      addHistory(status === "Archivé" ? "Devis archivé" : "Devis enregistré", `${numero} — ${devisForm.client}`);
-    }
+
     if (devisForm.demandeId) {
       setDevisRequests((prev) =>
         prev.map((request) =>
@@ -1578,12 +1579,16 @@ export default function App() {
                 vin: devisForm.vin || request.vin || "",
                 marque: devisForm.marque || request.marque || "",
                 modele: devisForm.modele || request.modele || "",
+                devis: savedDevis,
                 devisNumero: numero,
-                devisId: savedDevis.id,
                 devisLignes: devisLines,
-                devisTotalTTC: devisTotals.totalTTC,
+                devisSousTotalHT: devisTotals.sousTotalHT,
+                devisSousTotalTTC: devisTotals.sousTotalTTC,
+                devisRemiseHT: devisTotals.remiseHT,
+                devisRemiseTTC: devisTotals.remiseTTC,
                 devisTotalHT: devisTotals.totalHT,
                 devisTVA: devisTotals.tva,
+                devisTotalTTC: devisTotals.totalTTC,
                 notesInternes: devisForm.notesInternes || request.notesInternes || "",
                 updatedAt: new Date().toLocaleString("fr-FR"),
                 updatedBy: currentUser?.name || "-",
@@ -1593,9 +1598,21 @@ export default function App() {
       );
 
       addHistory(
-        "Cahier mis à jour après devis",
-        `${devisForm.client || "-"} — ${Number(devisTotals.totalTTC || 0).toFixed(2)} €`
+        "Devis enregistré dans la demande Cahier",
+        `${devisForm.client || "-"} — ${numero} — ${Number(devisTotals.totalTTC || 0).toFixed(2)} €`
       );
+
+      resetDevisDraft();
+      setModuleActif("Cahier");
+      return;
+    }
+
+    if (editingDevisId) {
+      setDevis(devis.map((d) => (d.id === editingDevisId ? savedDevis : d)));
+      addHistory("Modification devis", `${numero} — ${devisForm.client}`);
+    } else {
+      setDevis([savedDevis, ...devis]);
+      addHistory(status === "Archivé" ? "Devis archivé" : "Devis enregistré", `${numero} — ${devisForm.client}`);
     }
 
     resetDevisDraft();
@@ -3267,6 +3284,7 @@ export default function App() {
                       <p>Plaque : {request.plaque || "-"} — VIN : {request.vin || "-"}</p>
                       <p>Pièces : {String(request.piecesDemandees || "-").slice(0, 140)}</p>
                       <span>Statut : {request.statut} — Salarié : {request.createdByName || "-"} — {request.createdAt}</span>
+                      {request.devisTotalTTC && <span>Devis dans cette demande : {request.devisNumero || "-"} — {Number(request.devisTotalTTC).toFixed(2)} €</span>}
 
                       <div className="actions" style={{ marginTop: "12px" }} onClick={(e) => e.stopPropagation()}>
                         <button onClick={() => setSelectedDevisRequest(request)}>Afficher</button>
@@ -3450,8 +3468,8 @@ export default function App() {
               </section>
 
               <div className="actions" style={{ marginTop: "16px" }}>
-                <button onClick={() => saveDevis("Brouillon")}>{editingDevisId ? "Enregistrer modification devis" : "Enregistrer devis"}</button>
-                <button onClick={() => saveDevis("Archivé")}>Valider / Archiver</button>
+                <button onClick={() => saveDevis("Brouillon")}>{devisForm.demandeId ? "Enregistrer dans la demande Cahier" : editingDevisId ? "Enregistrer modification devis" : "Enregistrer devis"}</button>
+                <button onClick={() => saveDevis("Archivé")}>{devisForm.demandeId ? "Valider et enregistrer dans Cahier" : "Valider / Archiver"}</button>
                 <button className="delete" onClick={resetDevisDraft}>Vider devis</button>
               </div>
             </section>
