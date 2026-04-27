@@ -225,6 +225,8 @@ export default function App() {
     prixAnnonce: "",
   });
 
+  const [requestPieceInput, setRequestPieceInput] = useState("");
+
   const [devisForm, setDevisForm] = useState({
     numero: "",
     client: "",
@@ -922,12 +924,42 @@ export default function App() {
     setDevisStockSelection([]);
   }
 
+  function parseRequestedPieces(value) {
+    return String(value || "")
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean);
+  }
+
+  function addRequestedPiece() {
+    const piece = requestPieceInput.trim();
+    if (!piece) return;
+
+    const currentPieces = parseRequestedPieces(devisRequestForm.piecesDemandees);
+    setDevisRequestForm({
+      ...devisRequestForm,
+      piecesDemandees: [...currentPieces, piece].join("\n"),
+    });
+    setRequestPieceInput("");
+  }
+
+  function removeRequestedPiece(index) {
+    const currentPieces = parseRequestedPieces(devisRequestForm.piecesDemandees);
+    const nextPieces = currentPieces.filter((_, i) => i !== index);
+
+    setDevisRequestForm({
+      ...devisRequestForm,
+      piecesDemandees: nextPieces.join("\n"),
+    });
+  }
+
   function changeDevisRequestForm(e) {
     setDevisRequestForm({ ...devisRequestForm, [e.target.name]: e.target.value });
   }
 
   function resetDevisRequestForm() {
     setEditingDevisRequestId(null);
+    setRequestPieceInput("");
     setDevisRequestForm({
       type: "Sur place",
       statut: "À traiter",
@@ -979,6 +1011,7 @@ export default function App() {
 
   function editDevisRequest(request) {
     setEditingDevisRequestId(request.id);
+    setRequestPieceInput("");
     setDevisRequestForm({
       type: request.type || "Sur place",
       statut: request.statut || "À traiter",
@@ -1037,6 +1070,8 @@ export default function App() {
   }
 
   function createDevisFromRequest(request) {
+    const requestedPieces = parseRequestedPieces(request.piecesDemandees);
+
     setDevisForm({
       numero: devisForm.numero || nextDevisNumero(),
       client: request.client || "",
@@ -1053,11 +1088,27 @@ export default function App() {
       remiseValue: "",
     });
 
+    setDevisLines(
+      requestedPieces.map((piece, index) => ({
+        id: Date.now() + index,
+        designation: piece,
+        reference: "",
+        quantite: 1,
+        prixTTC: "",
+        priceType: "demande",
+        sourceRequestId: request.id,
+      }))
+    );
+
+    setDevisLine({ designation: "", reference: "", quantite: "1", prixTTC: "" });
     setSelectedDevisRequest(null);
     setModuleActif("Devis");
     window.scrollTo({ top: 0, behavior: "smooth" });
 
-    addHistory("Création devis depuis demande", `${request.client || "-"} — ${request.plaque || request.vin || "-"}`);
+    addHistory(
+      "Demande ouverte dans devis",
+      `${request.client || "-"} — ${requestedPieces.length} pièce(s) à chiffrer`
+    );
   }
 
   function printDevisRequest(request) {
@@ -1307,6 +1358,27 @@ export default function App() {
       setDevis([savedDevis, ...devis]);
       addHistory(status === "Archivé" ? "Devis archivé" : "Devis enregistré", `${numero} — ${devisForm.client}`);
     }
+    if (devisForm.demandeId) {
+      setDevisRequests((prev) =>
+        prev.map((request) =>
+          request.id === devisForm.demandeId
+            ? {
+                ...request,
+                statut: "Client rappelé",
+                prixAnnonce: Number(devisTotals.totalTTC || 0).toFixed(2),
+                updatedAt: new Date().toLocaleString("fr-FR"),
+                updatedBy: currentUser?.name || "-",
+              }
+            : request
+        )
+      );
+
+      addHistory(
+        "Client rappelé après devis",
+        `${devisForm.client || "-"} — ${Number(devisTotals.totalTTC || 0).toFixed(2)} €`
+      );
+    }
+
     resetDevisDraft();
   }
 
@@ -2797,7 +2869,7 @@ export default function App() {
                 <span>01</span>
                 <div>
                   <h3>{editingDevisRequestId ? "Modifier une demande" : "Nouvelle demande client"}</h3>
-                  <p>Sur place, téléphone ou WhatsApp. Plaque ou VIN permet de retrouver l’historique automatiquement.</p>
+                  <p>Crée la demande et ajoute les pièces une par une. La demande reste À traiter jusqu’au devis final.</p>
                 </div>
               </div>
 
@@ -2834,13 +2906,41 @@ export default function App() {
                 <input name="modele" value={devisRequestForm.modele} onChange={changeDevisRequestForm} placeholder="Modèle" />
                 <input name="prixAnnonce" value={devisRequestForm.prixAnnonce} onChange={changeDevisRequestForm} placeholder="Prix annoncé si déjà donné" />
 
-                <textarea
-                  name="piecesDemandees"
-                  value={devisRequestForm.piecesDemandees}
-                  onChange={changeDevisRequestForm}
-                  placeholder="Pièces demandées par le client"
-                  style={{ minHeight: "80px", gridColumn: "1 / -1", border: "1px solid #bfd4ff", borderRadius: "15px", padding: "12px", fontFamily: "inherit" }}
-                />
+                <div style={{ gridColumn: "1 / -1" }}>
+                  <div className="form" style={{ gridTemplateColumns: "1fr auto", marginBottom: "12px" }}>
+                    <input
+                      value={requestPieceInput}
+                      onChange={(e) => setRequestPieceInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          addRequestedPiece();
+                        }
+                      }}
+                      placeholder="Écris une pièce demandée puis clique Ajouter pièce"
+                    />
+                    <button type="button" onClick={addRequestedPiece}>Ajouter pièce</button>
+                  </div>
+
+                  {parseRequestedPieces(devisRequestForm.piecesDemandees).length === 0 && (
+                    <div className="empty">Aucune pièce demandée ajoutée.</div>
+                  )}
+
+                  {parseRequestedPieces(devisRequestForm.piecesDemandees).length > 0 && (
+                    <div className="historyList">
+                      {parseRequestedPieces(devisRequestForm.piecesDemandees).map((piece, index) => (
+                        <div className="historyItem" key={`${piece}-${index}`}>
+                          <strong>{index + 1}. {piece}</strong>
+                          <div className="actions" style={{ marginTop: "8px" }}>
+                            <button type="button" className="delete" onClick={() => removeRequestedPiece(index)}>
+                              Retirer
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
 
                 <textarea
                   name="notesInternes"
@@ -2887,7 +2987,7 @@ export default function App() {
                           <>
                             <button onClick={() => setSelectedDevisRequest(item)}>Afficher</button>
                             <button onClick={() => editDevisRequest(item)}>Modifier</button>
-                            <button onClick={() => createDevisFromRequest(item)}>Créer devis</button>
+                            <button onClick={() => createDevisFromRequest(item)}>Ouvrir dans devis</button>
                           </>
                         ) : (
                           <>
@@ -2957,7 +3057,7 @@ export default function App() {
                         <button onClick={() => setSelectedDevisRequest(request)}>Afficher</button>
                         <button onClick={() => editDevisRequest(request)}>Modifier</button>
                         <button onClick={() => printDevisRequest(request)}>Imprimer</button>
-                        <button onClick={() => createDevisFromRequest(request)}>Créer devis</button>
+                        <button onClick={() => createDevisFromRequest(request)}>Ouvrir dans devis</button>
                         <select
                           value={request.statut || "À traiter"}
                           onChange={(e) => changeDevisRequestStatus(request.id, e.target.value)}
@@ -2985,7 +3085,7 @@ export default function App() {
                 <span>04</span>
                 <div>
                   <h3>{editingDevisId ? "Modifier le devis final" : "Devis final"}</h3>
-                  <p>Créer le devis final depuis une demande ou manuellement.</p>
+                  <p>Quand tu ouvres une demande, toutes les pièces s’affichent ici. Tu complètes seulement les références et les prix, puis tu enregistres.</p>
                 </div>
               </div>
 
@@ -3045,9 +3145,29 @@ export default function App() {
                         <tr key={line.id} style={{ borderBottom: "1px solid #d9e3f2", background: editingDevisLineId === line.id ? "#eaf1ff" : "white" }}>
                           <td style={{ padding: "12px", fontWeight: "900" }}>{index + 1}</td>
                           <td style={{ padding: "12px" }}>{line.designation}</td>
-                          <td style={{ padding: "12px" }}>{line.reference || "-"}</td>
-                          <td style={{ padding: "12px" }}>{line.quantite}</td>
-                          <td style={{ padding: "12px" }}>{Number(line.prixTTC).toFixed(2)} €</td>
+                          <td style={{ padding: "12px" }}>
+                            <input
+                              value={line.reference || ""}
+                              onChange={(e) => updateDevisLine(line.id, "reference", e.target.value)}
+                              placeholder="Référence"
+                              style={{ width: "140px", border: "1px solid #bfd4ff", borderRadius: "10px", height: "36px", padding: "0 10px" }}
+                            />
+                          </td>
+                          <td style={{ padding: "12px" }}>
+                            <input
+                              value={line.quantite}
+                              onChange={(e) => updateDevisLine(line.id, "quantite", e.target.value)}
+                              style={{ width: "70px", border: "1px solid #bfd4ff", borderRadius: "10px", height: "36px", padding: "0 10px" }}
+                            />
+                          </td>
+                          <td style={{ padding: "12px" }}>
+                            <input
+                              value={line.prixTTC}
+                              onChange={(e) => updateDevisLine(line.id, "prixTTC", e.target.value)}
+                              placeholder="Prix"
+                              style={{ width: "90px", border: "1px solid #bfd4ff", borderRadius: "10px", height: "36px", padding: "0 10px" }}
+                            />
+                          </td>
                           <td style={{ padding: "12px", fontWeight: "900" }}>{(Number(line.quantite) * Number(line.prixTTC)).toFixed(2)} €</td>
                           <td style={{ padding: "12px" }}>
                             <div className="actions">
@@ -3423,7 +3543,7 @@ export default function App() {
             <h2>Demande devis — {selectedDevisRequest.client || "Client sans nom"}</h2>
             <div className="modalGrid"><p><b>Type :</b> {selectedDevisRequest.type}</p><p><b>Statut :</b> {selectedDevisRequest.statut}</p><p><b>Client :</b> {selectedDevisRequest.client || "-"}</p><p><b>Type client :</b> {selectedDevisRequest.clientType || "-"}</p><p><b>Téléphone :</b> {selectedDevisRequest.telephone || "-"}</p><p><b>WhatsApp :</b> {selectedDevisRequest.whatsapp || "-"}</p><p><b>Plaque :</b> {selectedDevisRequest.plaque || "-"}</p><p><b>VIN :</b> {selectedDevisRequest.vin || "-"}</p><p><b>Véhicule :</b> {selectedDevisRequest.marque || "-"} {selectedDevisRequest.modele || ""}</p><p><b>Salarié :</b> {selectedDevisRequest.createdByName || "-"}</p><p><b>Date :</b> {selectedDevisRequest.createdAt || "-"}</p><p><b>Prix annoncé :</b> {selectedDevisRequest.prixAnnonce || "-"} €</p></div>
             <div className="historyList" style={{ marginTop: "18px" }}><div className="historyItem"><strong>Pièces demandées</strong><p style={{ whiteSpace: "pre-wrap" }}>{selectedDevisRequest.piecesDemandees || "-"}</p></div><div className="historyItem"><strong>Notes internes</strong><p style={{ whiteSpace: "pre-wrap" }}>{selectedDevisRequest.notesInternes || "-"}</p></div></div>
-            <div className="actions" style={{ marginTop: "18px" }}><button onClick={() => printDevisRequest(selectedDevisRequest)}>Imprimer</button><button onClick={() => editDevisRequest(selectedDevisRequest)}>Modifier</button><button onClick={() => createDevisFromRequest(selectedDevisRequest)}>Créer devis</button><button className="delete" onClick={() => deleteDevisRequest(selectedDevisRequest.id)}>Supprimer</button></div>
+            <div className="actions" style={{ marginTop: "18px" }}><button onClick={() => printDevisRequest(selectedDevisRequest)}>Imprimer</button><button onClick={() => editDevisRequest(selectedDevisRequest)}>Modifier</button><button onClick={() => createDevisFromRequest(selectedDevisRequest)}>Ouvrir dans devis</button><button className="delete" onClick={() => deleteDevisRequest(selectedDevisRequest.id)}>Supprimer</button></div>
           </div>
         </div>
       )}
