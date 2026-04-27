@@ -351,16 +351,19 @@ export default function App() {
   }
 
   function safeLocalStorageSet(key, value) {
+    if (key === "king_app_full") {
+      try {
+        localStorage.removeItem("king_app_full");
+      } catch {
+        // Ignore localStorage errors. Supabase is the main storage.
+      }
+      return;
+    }
+
     try {
       localStorage.setItem(key, value);
     } catch (error) {
-      console.warn("LocalStorage plein : sauvegarde locale allégée.", error);
-      try {
-        const data = JSON.parse(value);
-        localStorage.setItem(key, JSON.stringify(removeHeavyImagesForLocalStorage(data)));
-      } catch {
-        localStorage.removeItem(key);
-      }
+      console.warn("LocalStorage indisponible :", error);
     }
   }
 
@@ -530,6 +533,31 @@ export default function App() {
       return (plaque && itemPlaque && itemPlaque.includes(plaque)) || (vin && itemVin && itemVin.includes(vin)) || (client && itemClient && itemClient.includes(client)) || (telephone && itemTel && itemTel.includes(telephone));
     }).sort((a,b)=>Number(b.id||0)-Number(a.id||0)).slice(0,12);
   }, [devisRequests, devis, devisRequestForm.plaque, devisRequestForm.vin, devisRequestForm.client, devisRequestForm.telephone, devisForm.plaque, devisForm.vin, devisForm.client, devisForm.telephone]);
+
+  const vehicleHistoryForRequest = useMemo(() => {
+    const plaque = String(devisRequestForm.plaque || "").trim().toLowerCase();
+    const vin = String(devisRequestForm.vin || "").trim().toLowerCase();
+
+    if (!plaque && !vin) return [];
+
+    const allItems = [
+      ...devisRequests.map((item) => ({ ...item, sourceType: "Demande" })),
+      ...devis.map((item) => ({ ...item, sourceType: "Devis" })),
+    ];
+
+    return allItems
+      .filter((item) => {
+        const itemPlaque = String(item.plaque || "").trim().toLowerCase();
+        const itemVin = String(item.vin || "").trim().toLowerCase();
+
+        return (
+          (plaque && itemPlaque && itemPlaque.includes(plaque)) ||
+          (vin && itemVin && itemVin.includes(vin))
+        );
+      })
+      .sort((a, b) => Number(b.id || 0) - Number(a.id || 0))
+      .slice(0, 15);
+  }, [devisRequests, devis, devisRequestForm.plaque, devisRequestForm.vin]);
 
   const stockACommanderAuto = pieces.filter(
     (p) => Number(p.quantite) < Number(p.rupture) && !orderedAutoIds.includes(p.id)
