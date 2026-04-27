@@ -412,7 +412,7 @@ export default function App() {
 
   function appCahierToDb(request) {
     return {
-      cahier_numero: request.cahierNumero || nextCahierNumero(),
+      cahier_numero: request.cahierNumero || `CH-${Date.now()}`,
       type_demande: request.type || "Sur place",
       statut: request.statut || "En attente",
       client: request.client || "",
@@ -741,8 +741,8 @@ export default function App() {
         setOrderArchives(remoteState.orderArchives || []);
         const professionalDevis = await loadDevisFromDb();
         const professionalCahier = await loadCahierFromDb();
-        setDevis(professionalDevis && professionalDevis.length ? professionalDevis : remoteState.devis || []);
-        setDevisRequests(professionalCahier && professionalCahier.length ? professionalCahier : remoteState.devisRequests || []);
+        setDevis(Array.isArray(professionalDevis) ? professionalDevis : remoteState.devis || []);
+        setDevisRequests(Array.isArray(professionalCahier) ? professionalCahier : remoteState.devisRequests || []);
         setClients(remoteState.clients || []);
 
         const { data: remoteUsers, error: usersError } = await supabase
@@ -1002,6 +1002,32 @@ export default function App() {
       .filter((n) => !Number.isNaN(n));
 
     const nextNumber = userNumbers.length ? Math.max(...userNumbers) + 1 : 1;
+    return `${prefix}-${String(nextNumber).padStart(4, "0")}`;
+  }
+
+  async function nextCahierNumeroFromDb() {
+    const login = currentUser?.login || "user";
+    const year = new Date().getFullYear();
+    const prefix = `CH-${login.toUpperCase()}-${year}`;
+
+    const { data, error } = await supabase
+      .from("cahier_demandes")
+      .select("cahier_numero")
+      .eq("created_by_login", login)
+      .ilike("cahier_numero", `${prefix}-%`);
+
+    if (error) {
+      console.warn("Numéro Cahier DB impossible, fallback local", error);
+      return nextCahierNumero();
+    }
+
+    const numbers = (data || [])
+      .map((row) => String(row.cahier_numero || ""))
+      .filter((numero) => numero.startsWith(prefix))
+      .map((numero) => Number(numero.split("-").pop() || 0))
+      .filter((n) => !Number.isNaN(n));
+
+    const nextNumber = numbers.length ? Math.max(...numbers) + 1 : 1;
     return `${prefix}-${String(nextNumber).padStart(4, "0")}`;
   }
 
@@ -1595,33 +1621,45 @@ export default function App() {
     }
 
     const old = devisRequests.find((request) => request.id === editingDevisRequestId);
+    const cahierNumero = old?.cahierNumero || await nextCahierNumeroFromDb();
 
     const requestPayload = {
       id: editingDevisRequestId || Date.now(),
-      cahierNumero: old?.cahierNumero || nextCahierNumero(),
+      cahierNumero,
       ...devisRequestForm,
+      statut: devisRequestForm.statut || "En attente",
       createdByLogin: old?.createdByLogin || currentUser?.login || "",
       createdByName: old?.createdByName || currentUser?.name || "",
       createdAt: old?.createdAt || new Date().toLocaleString("fr-FR"),
       updatedAt: new Date().toLocaleString("fr-FR"),
-      updatedBy: currentUser?.name || "",
+      updatedBy: currentUser?.name || currentUser?.login || "",
     };
 
     try {
+      let savedRequest;
+
       if (editingDevisRequestId) {
-        const savedRequest = await updateCahierInDb(editingDevisRequestId, requestPayload);
-        setDevisRequests(devisRequests.map((request) => (request.id === editingDevisRequestId ? savedRequest : request)));
+        savedRequest = await updateCahierInDb(editingDevisRequestId, requestPayload);
         addHistory("Modification demande Cahier", `${savedRequest.cahierNumero} — ${savedRequest.client || "-"}`);
       } else {
-        const savedRequest = await insertCahierInDb(requestPayload);
-        setDevisRequests([savedRequest, ...devisRequests]);
+        savedRequest = await insertCahierInDb(requestPayload);
         addHistory("Nouvelle demande Cahier", `${savedRequest.cahierNumero} — ${savedRequest.client || "-"}`);
       }
 
+      const freshCahier = await loadCahierFromDb();
+      if (freshCahier) {
+        setDevisRequests(freshCahier);
+      } else if (editingDevisRequestId) {
+        setDevisRequests(devisRequests.map((request) => (request.id === editingDevisRequestId ? savedRequest : request)));
+      } else {
+        setDevisRequests([savedRequest, ...devisRequests]);
+      }
+
       resetDevisRequestForm();
+      alert("Demande Cahier enregistrée.");
     } catch (error) {
       console.error("Erreur cahier_demandes", error);
-      alert("Erreur Supabase : impossible d'enregistrer la demande Cahier.");
+      alert("Erreur Supabase : impossible d'enregistrer la demande Cahier. Vérifie la table cahier_demandes.");
     }
   }
 
