@@ -211,7 +211,7 @@ export default function App() {
 
   const [devisRequestForm, setDevisRequestForm] = useState({
     type: "Sur place",
-    statut: "À traiter",
+    statut: "En attente",
     client: "",
     telephone: "",
     whatsapp: "",
@@ -989,7 +989,7 @@ export default function App() {
     setRequestPieceInput("");
     setDevisRequestForm({
       type: "Sur place",
-      statut: "À traiter",
+      statut: "En attente",
       client: "",
       telephone: "",
       whatsapp: "",
@@ -1388,7 +1388,7 @@ export default function App() {
           request.id === devisForm.demandeId
             ? {
                 ...request,
-                statut: "Client rappelé",
+                statut: "Devis traité",
                 updatedAt: new Date().toLocaleString("fr-FR"),
                 updatedBy: currentUser?.name || "-",
               }
@@ -2882,9 +2882,16 @@ export default function App() {
           <>
             <section className="stats">
               <div><span>Demandes cahier</span><strong>{devisRequests.length}</strong></div>
-              <div><span>À traiter</span><strong>{devisRequests.filter((d) => d.statut === "À traiter").length}</strong></div>
-              <div><span>En recherche</span><strong>{devisRequests.filter((d) => d.statut === "En recherche").length}</strong></div>
-              <div><span>Devis prêts</span><strong>{devisRequests.filter((d) => d.statut === "Devis prêt").length}</strong></div>
+              <div><span>En attente</span><strong>{devisRequests.filter((d) => d.statut === "En attente").length}</strong></div>
+              <div><span>Devis traités</span><strong>{devisRequests.filter((d) => d.statut === "Devis traité").length}</strong></div>
+              <div>
+                <span>Taux traité</span>
+                <strong>
+                  {devisRequests.length
+                    ? Math.round((devisRequests.filter((d) => d.statut === "Devis traité").length * 100) / devisRequests.length) + "%"
+                    : "0%"}
+                </strong>
+              </div>
             </section>
 
             <section className="panel stockPanel">
@@ -2904,14 +2911,8 @@ export default function App() {
                 </select>
 
                 <select name="statut" value={devisRequestForm.statut} onChange={changeDevisRequestForm}>
-                  <option>À traiter</option>
-                  <option>En recherche</option>
-                  <option>Devis prêt</option>
-                  <option>Client rappelé</option>
-                  <option>Réponse WhatsApp envoyée</option>
-                  <option>Validé</option>
-                  <option>Refusé</option>
-                  <option>Archivé</option>
+                  <option>En attente</option>
+                  <option>Devis traité</option>
                 </select>
 
                 <input name="client" value={devisRequestForm.client} onChange={changeDevisRequestForm} placeholder="Nom client / société" />
@@ -2970,7 +2971,7 @@ export default function App() {
                   style={{ minHeight: "95px", gridColumn: "1 / -1", border: "1px solid #bfd4ff", borderRadius: "15px", padding: "12px", fontFamily: "inherit" }}
                 />
 
-                <button>{editingDevisRequestId ? "Enregistrer modification" : "Enregistrer demande non traitée"}</button>
+                <button>{editingDevisRequestId ? "Enregistrer modification" : "Enregistrer demande en attente"}</button>
 
                 {editingDevisRequestId && (
                   <button type="button" className="delete" onClick={resetDevisRequestForm}>Annuler modification</button>
@@ -3081,14 +3082,8 @@ export default function App() {
                           onChange={(e) => changeDevisRequestStatus(request.id, e.target.value)}
                           style={{ height: "40px", borderRadius: "12px", border: "1px solid #bfd4ff", padding: "0 8px" }}
                         >
-                          <option>À traiter</option>
-                          <option>En recherche</option>
-                          <option>Devis prêt</option>
-                          <option>Client rappelé</option>
-                          <option>Réponse WhatsApp envoyée</option>
-                          <option>Validé</option>
-                          <option>Refusé</option>
-                          <option>Archivé</option>
+                          <option>En attente</option>
+                          <option>Devis traité</option>
                         </select>
                         <button className="delete" onClick={() => deleteDevisRequest(request.id)}>Supprimer</button>
                       </div>
