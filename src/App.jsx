@@ -188,6 +188,9 @@ export default function App() {
   const [selectedDevisRequest, setSelectedDevisRequest] = useState(null);
   const [selectedClient, setSelectedClient] = useState(null);
   const [selectedClientArchive, setSelectedClientArchive] = useState(null);
+  const [clientPrintDate, setClientPrintDate] = useState(new Date().toISOString().slice(0, 10));
+  const [clientPrintMonth, setClientPrintMonth] = useState(new Date().toISOString().slice(0, 7));
+  const [clientPrintYear, setClientPrintYear] = useState(String(new Date().getFullYear()));
   const [devisStockSearchLineId, setDevisStockSearchLineId] = useState(null);
   const [devisStockSearchText, setDevisStockSearchText] = useState("");
   const [devisSoldSelection, setDevisSoldSelection] = useState({});
@@ -648,6 +651,328 @@ export default function App() {
       .eq("id", String(id));
 
     if (error) throw error;
+  }
+
+  function parseArchiveDate(value) {
+    if (!value) return null;
+
+    const direct = new Date(value);
+    if (!Number.isNaN(direct.getTime())) return direct;
+
+    const match = String(value).match(/(\d{2})\/(\d{2})\/(\d{4})/);
+    if (match) {
+      return new Date(`${match[3]}-${match[2]}-${match[1]}T00:00:00`);
+    }
+
+    return null;
+  }
+
+  function filterClientArchivesByPeriod(client, period, dateValue) {
+    if (!client || !Array.isArray(client.archives)) return [];
+
+    return client.archives.filter((archive) => {
+      const d = parseArchiveDate(archive.date || archive.createdAt);
+      if (!d) return false;
+
+      const year = d.getFullYear();
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const day = String(d.getDate()).padStart(2, "0");
+
+      if (period === "jour") {
+        return `${year}-${month}-${day}` === dateValue;
+      }
+
+      if (period === "mois") {
+        return `${year}-${month}` === dateValue;
+      }
+
+      if (period === "annee") {
+        return String(year) === String(dateValue);
+      }
+
+      return true;
+    });
+  }
+
+  function getClientArchiveTotal(archives) {
+    return (archives || []).reduce((sum, archive) => sum + Number(archive.total || archive.montant || 0), 0);
+  }
+
+  function buildClientArchiveRows(archives) {
+    return (archives || [])
+      .map((archive, archiveIndex) => {
+        const pieces = Array.isArray(archive.pieces) && archive.pieces.length
+          ? archive.pieces
+              .map(
+                (piece, pieceIndex) => `
+                  <tr>
+                    <td>${archiveIndex + 1}.${pieceIndex + 1}</td>
+                    <td>${piece.designation || piece.nom || "-"}</td>
+                    <td>${piece.reference || "-"}</td>
+                    <td>${piece.quantite || 1}</td>
+                    <td>${Number(piece.prixOriginal || piece.prix || 0).toFixed(2)} €</td>
+                    <td>${Number(piece.prixPaye || 0).toFixed(2)} €</td>
+                    <td>${piece.paiementStatut || "-"}</td>
+                  </tr>
+                `
+              )
+              .join("")
+          : `
+              <tr>
+                <td>${archiveIndex + 1}</td>
+                <td colspan="6">Paiement sans détail pièce</td>
+              </tr>
+            `;
+
+        return `
+          <tr class="archive-title">
+            <td colspan="7">
+              Paiement du ${archive.date || "-"} — ${Number(archive.total || archive.montant || 0).toFixed(2)} €
+              — Mode : ${archive.mode || "-"} — ${archive.commentaire || ""}
+            </td>
+          </tr>
+          ${pieces}
+        `;
+      })
+      .join("");
+  }
+
+  function printClientArchives(client, archives, title) {
+    if (!client) return alert("Sélectionne un client.");
+    if (!archives || archives.length === 0) return alert("Aucune archive à imprimer.");
+
+    const total = getClientArchiveTotal(archives);
+    const rows = buildClientArchiveRows(archives);
+
+    const win = window.open("", "_blank");
+
+    win.document.write(`
+      <html>
+        <head>
+          <title>${title} - ${client.nom || ""}</title>
+          <style>
+            @page { size: A4; margin: 14mm; }
+            body { font-family: Arial, sans-serif; color: #10234d; margin: 0; }
+            .page { min-height: calc(297mm - 28mm); display: flex; flex-direction: column; }
+            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #123f8f; padding-bottom: 12px; margin-bottom: 16px; }
+            .brand { display: flex; align-items: center; gap: 12px; }
+            .brand img { width: 72px; height: 72px; object-fit: contain; }
+            h1 { margin: 0; color: #123f8f; font-size: 21px; }
+            h2 { margin: 0; color: #123f8f; font-size: 24px; text-align: right; }
+            h3 { color: #123f8f; margin: 0 0 8px; }
+            p { margin: 4px 0; font-size: 12px; }
+            .box { border: 1px solid #d9e3f2; border-radius: 10px; padding: 10px; margin-bottom: 12px; page-break-inside: avoid; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th { background: #123f8f; color: white; padding: 8px; text-align: left; font-size: 11px; }
+            td { border: 1px solid #d9e3f2; padding: 7px; font-size: 11px; vertical-align: top; }
+            .archive-title td { background: #eef4ff; color: #123f8f; font-weight: bold; }
+            .total { margin-left: auto; width: 280px; background: #000; color: white; padding: 12px; border-radius: 10px; display: flex; justify-content: space-between; font-weight: bold; }
+            .footer { margin-top: auto; border-top: 2px solid #123f8f; padding-top: 8px; text-align: center; font-size: 10px; color: #555; line-height: 1.5; }
+            @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+          </style>
+        </head>
+        <body>
+          <div class="page">
+            <div class="header">
+              <div class="brand">
+                <img src="${logo}" />
+                <div>
+                  <h1>${ENTREPRISE.nom}</h1>
+                  <p>📍 ${ENTREPRISE.adresse}</p>
+                  <p>📧 ${ENTREPRISE.email}</p>
+                  <p>☎ ${ENTREPRISE.telephone} — WhatsApp ${ENTREPRISE.whatsapp}</p>
+                </div>
+              </div>
+              <div>
+                <h2>${title}</h2>
+                <p><strong>Date impression :</strong> ${new Date().toLocaleString("fr-FR")}</p>
+              </div>
+            </div>
+
+            <div class="box">
+              <h3>Client</h3>
+              <p><strong>Nom :</strong> ${client.nom || "-"}</p>
+              <p><strong>Téléphone :</strong> ${client.telephone || "-"}</p>
+              <p><strong>Adresse :</strong> ${client.adresse || "-"}</p>
+            </div>
+
+            <div class="box">
+              <h3>Archives paiements</h3>
+              <table>
+                <thead>
+                  <tr>
+                    <th>N°</th>
+                    <th>Pièce</th>
+                    <th>Référence</th>
+                    <th>Qté</th>
+                    <th>Prix origine</th>
+                    <th>Prix payé</th>
+                    <th>Statut</th>
+                  </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+              </table>
+            </div>
+
+            <div class="total">
+              <span>Total payé</span>
+              <span>${total.toFixed(2)} €</span>
+            </div>
+
+            <div class="footer">
+              ${ENTREPRISE.nom} — ${ENTREPRISE.adresse}<br/>
+              Email : ${ENTREPRISE.email} — Téléphone : ${ENTREPRISE.telephone} — WhatsApp : ${ENTREPRISE.whatsapp}<br/>
+              TVA : ${ENTREPRISE.tva}
+            </div>
+          </div>
+          <script>window.print();</script>
+        </body>
+      </html>
+    `);
+
+    win.document.close();
+    addHistory("Impression archives client", `${client.nom || "-"} — ${title}`);
+  }
+
+  function printSingleClientArchive(client, archive) {
+    if (!client || !archive) return;
+    printClientArchives(client, [archive], `Archive paiement client`);
+  }
+
+  function printClientJournal(client) {
+    if (!client) return alert("Sélectionne un client.");
+
+    const pendingRows = (client.pieces || [])
+      .map(
+        (piece, index) => `
+          <tr>
+            <td>${index + 1}</td>
+            <td>${piece.designation || "-"}</td>
+            <td>${piece.reference || "-"}</td>
+            <td>${piece.quantite || 1}</td>
+            <td>${Number(piece.prix || 0).toFixed(2)} €</td>
+            <td>${(Number(piece.prix || 0) * Number(piece.quantite || 1)).toFixed(2)} €</td>
+          </tr>
+        `
+      )
+      .join("");
+
+    const archiveRows = buildClientArchiveRows(client.archives || []);
+    const pendingTotal = (client.pieces || []).reduce((sum, piece) => sum + Number(piece.prix || 0) * Number(piece.quantite || 1), 0);
+    const paidTotal = getClientArchiveTotal(client.archives || []);
+
+    const win = window.open("", "_blank");
+
+    win.document.write(`
+      <html>
+        <head>
+          <title>Journal client - ${client.nom || ""}</title>
+          <style>
+            @page { size: A4; margin: 14mm; }
+            body { font-family: Arial, sans-serif; color: #10234d; margin: 0; }
+            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 3px solid #123f8f; padding-bottom: 12px; margin-bottom: 16px; }
+            .brand { display: flex; align-items: center; gap: 12px; }
+            .brand img { width: 72px; height: 72px; object-fit: contain; }
+            h1 { margin: 0; color: #123f8f; font-size: 21px; }
+            h2 { margin: 0; color: #123f8f; font-size: 24px; text-align: right; }
+            h3 { color: #123f8f; margin: 0 0 8px; }
+            p { margin: 4px 0; font-size: 12px; }
+            .box { border: 1px solid #d9e3f2; border-radius: 10px; padding: 10px; margin-bottom: 12px; page-break-inside: avoid; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th { background: #123f8f; color: white; padding: 8px; text-align: left; font-size: 11px; }
+            td { border: 1px solid #d9e3f2; padding: 7px; font-size: 11px; vertical-align: top; }
+            .archive-title td { background: #eef4ff; color: #123f8f; font-weight: bold; }
+            .stats { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; margin: 12px 0; }
+            .stat { border: 1px solid #d9e3f2; border-radius: 10px; padding: 10px; }
+            .stat span { color: #64748b; font-size: 11px; font-weight: bold; display: block; }
+            .stat strong { color: #123f8f; font-size: 18px; display: block; margin-top: 4px; }
+            .footer { margin-top: 24px; border-top: 2px solid #123f8f; padding-top: 8px; text-align: center; font-size: 10px; color: #555; line-height: 1.5; }
+            @media print { body { print-color-adjust: exact; -webkit-print-color-adjust: exact; } }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div class="brand">
+              <img src="${logo}" />
+              <div>
+                <h1>${ENTREPRISE.nom}</h1>
+                <p>📍 ${ENTREPRISE.adresse}</p>
+                <p>📧 ${ENTREPRISE.email}</p>
+                <p>☎ ${ENTREPRISE.telephone} — WhatsApp ${ENTREPRISE.whatsapp}</p>
+              </div>
+            </div>
+            <div>
+              <h2>JOURNAL CLIENT</h2>
+              <p><strong>Date :</strong> ${new Date().toLocaleString("fr-FR")}</p>
+            </div>
+          </div>
+
+          <div class="box">
+            <h3>Client</h3>
+            <p><strong>Nom :</strong> ${client.nom || "-"}</p>
+            <p><strong>Téléphone :</strong> ${client.telephone || "-"}</p>
+            <p><strong>Adresse :</strong> ${client.adresse || "-"}</p>
+          </div>
+
+          <div class="stats">
+            <div class="stat"><span>Total payé archivé</span><strong>${paidTotal.toFixed(2)} €</strong></div>
+            <div class="stat"><span>Reste en cours</span><strong>${pendingTotal.toFixed(2)} €</strong></div>
+          </div>
+
+          <div class="box">
+            <h3>Pièces impayées / en cours</h3>
+            <table>
+              <thead>
+                <tr><th>N°</th><th>Pièce</th><th>Référence</th><th>Qté</th><th>Prix</th><th>Total</th></tr>
+              </thead>
+              <tbody>${pendingRows || `<tr><td colspan="6">Aucune pièce en cours.</td></tr>`}</tbody>
+            </table>
+          </div>
+
+          <div class="box">
+            <h3>Historique des paiements archivés</h3>
+            <table>
+              <thead>
+                <tr><th>N°</th><th>Pièce</th><th>Référence</th><th>Qté</th><th>Prix origine</th><th>Prix payé</th><th>Statut</th></tr>
+              </thead>
+              <tbody>${archiveRows || `<tr><td colspan="7">Aucun paiement archivé.</td></tr>`}</tbody>
+            </table>
+          </div>
+
+          <div class="footer">
+            ${ENTREPRISE.nom} — ${ENTREPRISE.adresse}<br/>
+            Email : ${ENTREPRISE.email} — Téléphone : ${ENTREPRISE.telephone} — WhatsApp : ${ENTREPRISE.whatsapp}<br/>
+            TVA : ${ENTREPRISE.tva}
+          </div>
+
+          <script>window.print();</script>
+        </body>
+      </html>
+    `);
+
+    win.document.close();
+    addHistory("Impression journal client", client.nom || "-");
+  }
+
+  function autoSelectClientPaymentPieces() {
+    if (!selectedClient) return alert("Sélectionne un client.");
+    const montant = Number(clientPaymentForm.montant || 0);
+    if (montant <= 0) return alert("Entre un montant avant auto-sélection.");
+
+    let remaining = montant;
+    const selectedIds = [];
+
+    for (const piece of selectedClient.pieces || []) {
+      if (remaining <= 0) break;
+
+      const lineTotal = Number(piece.prix || 0) * Number(piece.quantite || 1);
+      if (lineTotal <= 0) continue;
+
+      selectedIds.push(piece.id);
+      remaining -= lineTotal;
+    }
+
+    setSelectedClientPieceIds(selectedIds);
   }
 
   function dbClientToApp(row, piecesRows = [], paiementsRows = []) {
@@ -5041,6 +5366,11 @@ export default function App() {
                         </select>
                         <input name="commentaire" value={clientPaymentForm.commentaire} onChange={changeClientPaymentForm} placeholder="Commentaire paiement" />
                         <button>{editingClientArchiveId ? "Enregistrer modification archive" : "Valider paiement"}</button>
+                    {!editingClientArchiveId && (
+                      <button type="button" onClick={autoSelectClientPaymentPieces}>
+                        Auto-sélection montant
+                      </button>
+                    )
                         {editingClientArchiveId ? (
                           <button type="button" onClick={cancelClientArchiveEdit}>Annuler modification archive</button>
                         ) : (
