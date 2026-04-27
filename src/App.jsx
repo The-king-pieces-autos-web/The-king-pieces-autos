@@ -371,6 +371,237 @@ export default function App() {
     return normalizePieces((data || []).map(dbStockToAppPiece));
   }
 
+  function dbCahierToApp(row) {
+    const pieces =
+      Array.isArray(row.pieces_demandees)
+        ? row.pieces_demandees
+        : [];
+
+    const piecesText = pieces
+      .map((item) => {
+        if (typeof item === "string") return item;
+        return item?.designation || item?.nom || item?.piece || "";
+      })
+      .filter(Boolean)
+      .join("\n");
+
+    return {
+      id: row.id,
+      legacyId: row.legacy_id || "",
+      cahierNumero: row.cahier_numero || "",
+      type: row.type_demande || "Sur place",
+      statut: row.statut || "En attente",
+      client: row.client || "",
+      telephone: row.telephone || "",
+      whatsapp: row.whatsapp || "",
+      clientType: row.client_type || "Particulier",
+      plaque: row.plaque || "",
+      vin: row.vin || "",
+      marque: row.marque || "",
+      modele: row.modele || "",
+      piecesDemandees: piecesText,
+      notesInternes: row.notes_internes || "",
+      createdByLogin: row.created_by_login || "",
+      createdByName: row.created_by_name || "",
+      updatedBy: row.updated_by || "",
+      createdAt: row.created_at ? new Date(row.created_at).toLocaleString("fr-FR") : "",
+      updatedAt: row.updated_at ? new Date(row.updated_at).toLocaleString("fr-FR") : "",
+      sourceDb: "cahier_demandes",
+    };
+  }
+
+  function appCahierToDb(request) {
+    return {
+      cahier_numero: request.cahierNumero || nextCahierNumero(),
+      type_demande: request.type || "Sur place",
+      statut: request.statut || "En attente",
+      client: request.client || "",
+      telephone: request.telephone || "",
+      whatsapp: request.whatsapp || "",
+      client_type: request.clientType || "Particulier",
+      plaque: request.plaque || "",
+      vin: request.vin || "",
+      marque: request.marque || "",
+      modele: request.modele || "",
+      pieces_demandees: parseRequestedPieces(request.piecesDemandees || "").map((designation, index) => ({
+        id: index + 1,
+        designation,
+      })),
+      notes_internes: request.notesInternes || "",
+      created_by_login: request.createdByLogin || currentUser?.login || "",
+      created_by_name: request.createdByName || currentUser?.name || "",
+      updated_by: currentUser?.name || currentUser?.login || "system",
+    };
+  }
+
+  function dbDevisToApp(row) {
+    const lignes = Array.isArray(row.lignes) ? row.lignes : [];
+
+    return {
+      id: row.id,
+      legacyId: row.legacy_id || "",
+      numero: row.devis_numero || "",
+      cahierDemandeId: row.cahier_demande_id || "",
+      client: row.client || "",
+      telephone: row.telephone || "",
+      date: row.date_devis || new Date().toISOString().slice(0, 10),
+      marque: row.marque || "",
+      modele: row.modele || "",
+      plaque: row.plaque || "",
+      vin: row.vin || "",
+      origineDemande: row.origine_demande || "",
+      status: row.statut || "Archivé",
+      lignes,
+      lignesCompletesCahier: Array.isArray(row.lignes_completes_cahier) ? row.lignes_completes_cahier : lignes,
+      sousTotalHT: Number(row.sous_total_ht || 0),
+      sousTotalTTC: Number(row.sous_total_ttc || 0),
+      remiseHT: Number(row.remise_ht || 0),
+      remiseTTC: Number(row.remise_ttc || 0),
+      totalHT: Number(row.total_ht || 0),
+      tva: Number(row.tva || 0),
+      totalTTC: Number(row.total_ttc || 0),
+      totalToutesPiecesTTC: Number(row.total_toutes_pieces_ttc || 0),
+      totalValideClientTTC: Number(row.total_valide_client_ttc || 0),
+      notesInternes: row.notes_internes || "",
+      createdBy: row.created_by || "",
+      updatedBy: row.updated_by || "",
+      createdAt: row.created_at ? new Date(row.created_at).toLocaleString("fr-FR") : "",
+      updatedAt: row.updated_at ? new Date(row.updated_at).toLocaleString("fr-FR") : "",
+      sourceDb: "devis",
+    };
+  }
+
+  function appDevisToDb(devisItem) {
+    return {
+      devis_numero: devisItem.numero || nextDevisNumero(),
+      cahier_demande_id: devisItem.demandeId || devisItem.cahierDemandeId || null,
+      client: devisItem.client || "",
+      telephone: devisItem.telephone || "",
+      date_devis: devisItem.date || new Date().toISOString().slice(0, 10),
+      marque: devisItem.marque || "",
+      modele: devisItem.modele || "",
+      plaque: devisItem.plaque || "",
+      vin: devisItem.vin || "",
+      origine_demande: devisItem.origineDemande || "",
+      statut: devisItem.status || "Archivé",
+      lignes: devisItem.lignes || [],
+      lignes_completes_cahier: devisItem.lignesCompletesCahier || devisItem.lignes || [],
+      sous_total_ht: Number(devisItem.sousTotalHT || 0),
+      sous_total_ttc: Number(devisItem.sousTotalTTC || 0),
+      remise_ht: Number(devisItem.remiseHT || 0),
+      remise_ttc: Number(devisItem.remiseTTC || 0),
+      total_ht: Number(devisItem.totalHT || 0),
+      tva: Number(devisItem.tva || 0),
+      total_ttc: Number(devisItem.totalTTC || 0),
+      total_toutes_pieces_ttc: Number(devisItem.totalToutesPiecesTTC || devisItem.totalTTC || 0),
+      total_valide_client_ttc: Number(devisItem.totalValideClientTTC || devisItem.totalTTC || 0),
+      notes_internes: devisItem.notesInternes || "",
+      created_by: devisItem.createdBy || currentUser?.name || "",
+      updated_by: currentUser?.name || currentUser?.login || "system",
+    };
+  }
+
+  async function loadCahierFromDb() {
+    const { data, error } = await supabase
+      .from("cahier_demandes")
+      .select("*")
+      .order("updated_at", { ascending: false });
+
+    if (error) {
+      console.error("Chargement cahier_demandes impossible", error);
+      return null;
+    }
+
+    return (data || []).map(dbCahierToApp);
+  }
+
+  async function loadDevisFromDb() {
+    const { data, error } = await supabase
+      .from("devis")
+      .select("*")
+      .order("updated_at", { ascending: false });
+
+    if (error) {
+      console.error("Chargement devis impossible", error);
+      return null;
+    }
+
+    return (data || []).map(dbDevisToApp);
+  }
+
+  async function insertCahierInDb(request) {
+    const { data, error } = await supabase
+      .from("cahier_demandes")
+      .insert(appCahierToDb(request))
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return dbCahierToApp(data);
+  }
+
+  async function updateCahierInDb(id, request) {
+    const { data, error } = await supabase
+      .from("cahier_demandes")
+      .update(appCahierToDb(request))
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return dbCahierToApp(data);
+  }
+
+  async function deleteCahierInDb(id) {
+    const { error } = await supabase
+      .from("cahier_demandes")
+      .delete()
+      .eq("id", id);
+
+    if (error) throw error;
+  }
+
+  async function insertDevisInDb(devisItem) {
+    const { data, error } = await supabase
+      .from("devis")
+      .insert(appDevisToDb(devisItem))
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return dbDevisToApp(data);
+  }
+
+  async function updateDevisInDb(id, devisItem) {
+    const { data, error } = await supabase
+      .from("devis")
+      .update(appDevisToDb(devisItem))
+      .eq("id", id)
+      .select("*")
+      .single();
+
+    if (error) throw error;
+    return dbDevisToApp(data);
+  }
+
+  async function deleteDevisInDb(id) {
+    const { error } = await supabase
+      .from("devis")
+      .delete()
+      .eq("id", id);
+
+    if (error) throw error;
+  }
+
+  async function reloadCahierDevisFromDb() {
+    const [dbCahier, dbDevis] = await Promise.all([loadCahierFromDb(), loadDevisFromDb()]);
+
+    if (dbCahier) setDevisRequests(dbCahier);
+    if (dbDevis) setDevis(dbDevis);
+
+    addHistory("Rechargement Cahier/Devis", "Cahier et Devis rechargés depuis les tables professionnelles");
+  }
+
   async function reloadStockFromDb() {
     const professionalStock = await loadStockItemsFromDb();
     if (professionalStock) {
@@ -508,8 +739,10 @@ export default function App() {
         setManualOrders(remoteState.manualOrders || []);
         setOrderedAutoIds(remoteState.orderedAutoIds || []);
         setOrderArchives(remoteState.orderArchives || []);
-        setDevis(remoteState.devis || []);
-        setDevisRequests(remoteState.devisRequests || []);
+        const professionalDevis = await loadDevisFromDb();
+        const professionalCahier = await loadCahierFromDb();
+        setDevis(professionalDevis && professionalDevis.length ? professionalDevis : remoteState.devis || []);
+        setDevisRequests(professionalCahier && professionalCahier.length ? professionalCahier : remoteState.devisRequests || []);
         setClients(remoteState.clients || []);
 
         const { data: remoteUsers, error: usersError } = await supabase
@@ -1354,37 +1587,42 @@ export default function App() {
       });
   }
 
-  function saveDevisRequest(e) {
+  async function saveDevisRequest(e) {
     e.preventDefault();
 
-    if (!devisRequestForm.client && !devisRequestForm.telephone && !devisRequestForm.plaque && !devisRequestForm.vin) {
-      return alert("Ajoute au minimum un nom client, un téléphone, une plaque ou un VIN.");
+    if (!devisRequestForm.client && !devisRequestForm.plaque && !devisRequestForm.vin) {
+      return alert("Ajoute au minimum un nom client, une plaque ou un VIN.");
     }
 
-    const old = editingDevisRequestId
-      ? devisRequests.find((request) => request.id === editingDevisRequestId)
-      : null;
+    const old = devisRequests.find((request) => request.id === editingDevisRequestId);
 
-    const payload = {
+    const requestPayload = {
       id: editingDevisRequestId || Date.now(),
       cahierNumero: old?.cahierNumero || nextCahierNumero(),
       ...devisRequestForm,
-      createdByLogin: old?.createdByLogin || currentUser?.login || "-",
-      createdByName: old?.createdByName || currentUser?.name || "-",
+      createdByLogin: old?.createdByLogin || currentUser?.login || "",
+      createdByName: old?.createdByName || currentUser?.name || "",
       createdAt: old?.createdAt || new Date().toLocaleString("fr-FR"),
       updatedAt: new Date().toLocaleString("fr-FR"),
-      updatedBy: currentUser?.name || "-",
+      updatedBy: currentUser?.name || "",
     };
 
-    if (editingDevisRequestId) {
-      setDevisRequests(devisRequests.map((request) => (request.id === editingDevisRequestId ? payload : request)));
-      addHistory("Modification demande devis", `${payload.client || "-"} — ${payload.plaque || payload.vin || "-"}`);
-    } else {
-      setDevisRequests([payload, ...devisRequests]);
-      addHistory("Création demande devis", `${payload.type} — ${payload.client || "-"} — ${payload.plaque || payload.vin || "-"}`);
-    }
+    try {
+      if (editingDevisRequestId) {
+        const savedRequest = await updateCahierInDb(editingDevisRequestId, requestPayload);
+        setDevisRequests(devisRequests.map((request) => (request.id === editingDevisRequestId ? savedRequest : request)));
+        addHistory("Modification demande Cahier", `${savedRequest.cahierNumero} — ${savedRequest.client || "-"}`);
+      } else {
+        const savedRequest = await insertCahierInDb(requestPayload);
+        setDevisRequests([savedRequest, ...devisRequests]);
+        addHistory("Nouvelle demande Cahier", `${savedRequest.cahierNumero} — ${savedRequest.client || "-"}`);
+      }
 
-    resetDevisRequestForm();
+      resetDevisRequestForm();
+    } catch (error) {
+      console.error("Erreur cahier_demandes", error);
+      alert("Erreur Supabase : impossible d'enregistrer la demande Cahier.");
+    }
   }
 
   function editDevisRequest(request) {
@@ -1409,41 +1647,42 @@ export default function App() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
-  function deleteDevisRequest(id) {
+  async function deleteDevisRequest(id) {
     const request = devisRequests.find((item) => item.id === id);
-    const isOwner = request?.createdByLogin === currentUser?.login;
+    if (!request) return;
 
-    if (!isAdmin && !isOwner) {
-      return alert("Tu peux supprimer seulement tes propres demandes.");
+    if (!window.confirm(`Supprimer la demande Cahier ${request.cahierNumero || ""} ?`)) return;
+
+    try {
+      await deleteCahierInDb(id);
+      setDevisRequests(devisRequests.filter((item) => item.id !== id));
+      addHistory("Suppression demande Cahier", `${request.cahierNumero || "-"} — ${request.client || "-"}`);
+      setSelectedDevisRequest(null);
+    } catch (error) {
+      console.error("Erreur suppression cahier_demandes", error);
+      alert("Erreur Supabase : impossible de supprimer la demande.");
     }
-
-    if (!window.confirm("Supprimer cette demande du cahier ?")) return;
-
-    setDevisRequests(devisRequests.filter((item) => item.id !== id));
-
-    if (selectedDevisRequest?.id === id) setSelectedDevisRequest(null);
-    if (editingDevisRequestId === id) resetDevisRequestForm();
-
-    addHistory("Suppression demande devis", `${request?.client || "-"} — ${request?.plaque || request?.vin || "-"}`);
   }
 
-  function changeDevisRequestStatus(id, statut) {
+  async function changeDevisRequestStatus(id, statut) {
     const request = devisRequests.find((item) => item.id === id);
+    if (!request) return;
 
-    setDevisRequests(
-      devisRequests.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              statut,
-              updatedAt: new Date().toLocaleString("fr-FR"),
-              updatedBy: currentUser?.name || "-",
-            }
-          : item
-      )
-    );
+    const updatedRequestPayload = {
+      ...request,
+      statut,
+      updatedAt: new Date().toLocaleString("fr-FR"),
+      updatedBy: currentUser?.name || "",
+    };
 
-    addHistory("Changement statut demande", `${request?.client || "-"} — ${statut}`);
+    try {
+      const savedRequest = await updateCahierInDb(id, updatedRequestPayload);
+      setDevisRequests(devisRequests.map((item) => (item.id === id ? savedRequest : item)));
+      addHistory("Statut Cahier modifié", `${savedRequest.cahierNumero || "-"} — ${statut}`);
+    } catch (error) {
+      console.error("Erreur statut cahier_demandes", error);
+      alert("Erreur Supabase : statut non modifié.");
+    }
   }
 
   function createDevisFromRequest(request) {
@@ -2149,14 +2388,15 @@ export default function App() {
     const totalConfirmedTTC = confirmedLinesForDevis.reduce((sum, line) => sum + Number(line.totalFinalTTC || 0), 0);
     const totalConfirmedHT = totalConfirmedTTC / 1.2;
     const tvaConfirmed = totalConfirmedTTC - totalConfirmedHT;
-
     const totalAllTTC = allLinesForCahier.reduce((sum, line) => sum + Number(line.totalFinalTTC || 0), 0);
 
-    const savedDevis = {
+    const savedDevisPayload = {
       id: editingDevisId || Date.now(),
       ...devisForm,
       numero,
+      cahierDemandeId: devisForm.demandeId || devisForm.cahierDemandeId || "",
       lignes: confirmedLinesForDevis,
+      lignesCompletesCahier: allLinesForCahier,
       sousTotalHT: totalConfirmedHT,
       sousTotalTTC: totalConfirmedTTC,
       remiseHT: 0,
@@ -2164,6 +2404,8 @@ export default function App() {
       totalHT: totalConfirmedHT,
       tva: tvaConfirmed,
       totalTTC: totalConfirmedTTC,
+      totalToutesPiecesTTC: totalAllTTC,
+      totalValideClientTTC: totalConfirmedTTC,
       status: "Archivé",
       createdBy: currentUser?.name || "-",
       createdAt: editingDevisId
@@ -2172,54 +2414,52 @@ export default function App() {
       updatedAt: new Date().toLocaleString("fr-FR"),
     };
 
-    if (editingDevisId) {
-      setDevis(devis.map((d) => (d.id === editingDevisId ? savedDevis : d)));
-      addHistory("Modification devis validé", `${numero} — ${devisForm.client}`);
-    } else {
-      setDevis([savedDevis, ...devis]);
-      addHistory("Devis validé", `${numero} — ${devisForm.client}`);
+    try {
+      await removeConfirmedStockLinesFromStock();
+
+      let savedDevis;
+
+      if (editingDevisId) {
+        savedDevis = await updateDevisInDb(editingDevisId, savedDevisPayload);
+        setDevis(devis.map((d) => (d.id === editingDevisId ? savedDevis : d)));
+        addHistory("Modification devis validé", `${numero} — ${devisForm.client}`);
+      } else {
+        savedDevis = await insertDevisInDb(savedDevisPayload);
+        setDevis([savedDevis, ...devis]);
+        addHistory("Devis validé", `${numero} — ${devisForm.client}`);
+      }
+
+      if (devisForm.demandeId) {
+        const request = devisRequests.find((item) => item.id === devisForm.demandeId);
+
+        if (request) {
+          const requestPayload = {
+            ...request,
+            statut: "Devis traité",
+            client: devisForm.client || request.client || "",
+            telephone: devisForm.telephone || request.telephone || "",
+            plaque: devisForm.plaque || request.plaque || "",
+            vin: devisForm.vin || request.vin || "",
+            marque: devisForm.marque || request.marque || "",
+            modele: devisForm.modele || request.modele || "",
+            piecesDemandees: allLinesForCahier.map((line) => line.designation).join("\n"),
+            notesInternes:
+              `${request.notesInternes || ""}\n\nDevis ${numero} archivé : total toutes pièces ${totalAllTTC.toFixed(2)} €, total validé ${totalConfirmedTTC.toFixed(2)} €`.trim(),
+            updatedAt: new Date().toLocaleString("fr-FR"),
+            updatedBy: currentUser?.name || "",
+          };
+
+          const savedRequest = await updateCahierInDb(devisForm.demandeId, requestPayload);
+          setDevisRequests(devisRequests.map((item) => (item.id === devisForm.demandeId ? savedRequest : item)));
+          addHistory("Cahier mis à jour avec devis", `${savedRequest.cahierNumero || "-"} — ${numero}`);
+        }
+      }
+
+      resetDevisDraft();
+    } catch (error) {
+      console.error("Erreur enregistrement devis/devis", error);
+      alert("Erreur Supabase : impossible d'enregistrer le devis.");
     }
-
-    if (devisForm.demandeId) {
-      const archiveComplet = {
-        ...savedDevis,
-        lignes: allLinesForCahier,
-        totalToutesPiecesTTC: totalAllTTC,
-        totalPiecesValideesTTC: totalConfirmedTTC,
-        archivedAt: new Date().toLocaleString("fr-FR"),
-        archivedBy: currentUser?.name || "-",
-      };
-
-      setDevisRequests((prev) =>
-        prev.map((request) =>
-          request.id === devisForm.demandeId
-            ? {
-                ...request,
-                statut: "Devis traité",
-                client: devisForm.client || request.client || "",
-                telephone: devisForm.telephone || request.telephone || "",
-                plaque: devisForm.plaque || request.plaque || "",
-                vin: devisForm.vin || request.vin || "",
-                marque: devisForm.marque || request.marque || "",
-                modele: devisForm.modele || request.modele || "",
-                devisArchiveComplet: archiveComplet,
-                devis: savedDevis,
-                devisNumero: numero,
-                devisLignes: allLinesForCahier,
-                devisTotalToutesPiecesTTC: totalAllTTC,
-                devisTotalValideTTC: totalConfirmedTTC,
-                devisTotalTTC: totalConfirmedTTC,
-                updatedAt: new Date().toLocaleString("fr-FR"),
-                updatedBy: currentUser?.name || "-",
-              }
-            : request
-        )
-      );
-
-      addHistory("Cahier archivé complet", `${devisForm.client || "-"} — ${numero}`);
-    }
-
-    resetDevisDraft();
   }
 
   function editDevis(d) {
@@ -3844,7 +4084,7 @@ export default function App() {
                 <span>03</span>
                 <div>
                   <h3>Liste des demandes du cahier</h3>
-                  <p>Tout le monde peut rechercher par plaque, VIN, nom, téléphone ou pièce. L’admin voit tout.</p>
+                  <p>Cahier branché sur la table professionnelle Supabase. Recherche par plaque, VIN, nom, téléphone ou pièce.</p>
                 </div>
               </div>
 
@@ -3856,6 +4096,9 @@ export default function App() {
                   placeholder="Recherche : plaque, VIN, nom client, téléphone, pièce..."
                 />
               </section>
+              <div className="actions" style={{ marginBottom: "16px" }}>
+                <button type="button" onClick={reloadCahierDevisFromDb}>Recharger Cahier/Devis</button>
+              </div>
 
               <div className="form" style={{ marginBottom: "16px" }}>
                 <select value={devisRequestTypeFilter} onChange={(e) => setDevisRequestTypeFilter(e.target.value)}>
@@ -4169,7 +4412,7 @@ export default function App() {
                 <span>02</span>
                 <div>
                   <h3>Devis enregistrés</h3>
-                  <p>Modifier, supprimer ou imprimer à tout moment.</p>
+                  <p>Devis branché sur la table professionnelle Supabase. Modifier, supprimer ou imprimer à tout moment.</p>
                 </div>
               </div>
 
