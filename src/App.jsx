@@ -166,6 +166,7 @@ export default function App() {
   const [search, setSearch] = useState("");
   const [clientSearch, setClientSearch] = useState("");
   const [devisRequestSearch, setDevisRequestSearch] = useState("");
+  const [devisSearch, setDevisSearch] = useState("");
   const [devisRequestTypeFilter, setDevisRequestTypeFilter] = useState("Tous");
   const [devisRequestUserFilter, setDevisRequestUserFilter] = useState("Tous");
   const [familleActive, setFamilleActive] = useState("");
@@ -247,6 +248,14 @@ export default function App() {
     reference: "",
     quantite: "1",
     prixTTC: "",
+    deuxOffres: false,
+    fournisseur1: "",
+    dateDispo1: "Sur place",
+    reference2: "",
+    prixTTC2: "",
+    fournisseur2: "",
+    dateDispo2: "",
+    offreChoisie: "offre1",
   });
 
   const [devisLines, setDevisLines] = useState([]);
@@ -559,6 +568,29 @@ export default function App() {
       .slice(0, 15);
   }, [devisRequests, devis, devisRequestForm.plaque, devisRequestForm.vin]);
 
+  function getLineUnitPrice(line) {
+    if (line.deuxOffres && line.offreChoisie === "offre2") {
+      return Number(line.prixTTC2 || 0);
+    }
+
+    return Number(line.prixTTC || 0);
+  }
+
+  function getLineTotal(line) {
+    return Number(line.quantite || 0) * getLineUnitPrice(line);
+  }
+
+  const filteredDevis = useMemo(() => {
+    const q = devisSearch.trim().toLowerCase();
+
+    if (!q) return devis;
+
+    return devis.filter((d) => {
+      const text = `${d.numero} ${d.client} ${d.telephone} ${d.plaque} ${d.vin} ${d.marque} ${d.modele} ${d.createdBy}`.toLowerCase();
+      return text.includes(q);
+    });
+  }, [devis, devisSearch]);
+
   const stockACommanderAuto = pieces.filter(
     (p) => Number(p.quantite) < Number(p.rupture) && !orderedAutoIds.includes(p.id)
   );
@@ -569,7 +601,7 @@ export default function App() {
   ];
 
   const devisTotals = useMemo(() => {
-    const sousTotalTTC = devisLines.reduce((s, l) => s + Number(l.quantite || 0) * Number(l.prixTTC || 0), 0);
+    const sousTotalTTC = devisLines.reduce((s, l) => s + getLineTotal(l), 0);
     const remiseValue = Number(devisForm.remiseValue || 0);
     let remiseTTC = devisForm.remiseType === "pourcentage" ? sousTotalTTC * (remiseValue / 100) : remiseValue;
     if (remiseTTC > sousTotalTTC) remiseTTC = sousTotalTTC;
@@ -1260,7 +1292,7 @@ export default function App() {
       }))
     );
 
-    setDevisLine({ designation: "", reference: "", quantite: "1", prixTTC: "" });
+    setDevisLine({ designation: "", reference: "", quantite: "1", prixTTC: "", deuxOffres: false, fournisseur1: "", dateDispo1: "Sur place", reference2: "", prixTTC2: "", fournisseur2: "", dateDispo2: "", offreChoisie: "offre1" });
     setSelectedDevisRequest(null);
     setModuleActif("Devis");
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1413,11 +1445,19 @@ export default function App() {
         reference: devisLine.reference,
         quantite: Number(devisLine.quantite || 1),
         prixTTC: Number(devisLine.prixTTC || 0),
-        priceType: "manuel",
+        deuxOffres: Boolean(devisLine.deuxOffres),
+        fournisseur1: devisLine.fournisseur1,
+        dateDispo1: devisLine.dateDispo1,
+        reference2: devisLine.reference2,
+        prixTTC2: Number(devisLine.prixTTC2 || 0),
+        fournisseur2: devisLine.fournisseur2,
+        dateDispo2: devisLine.dateDispo2,
+        offreChoisie: devisLine.deuxOffres ? devisLine.offreChoisie || "offre1" : "offre1",
+        priceType: devisLine.deuxOffres ? "deux offres" : "manuel",
       },
     ]);
 
-    setDevisLine({ designation: "", reference: "", quantite: "1", prixTTC: "" });
+    setDevisLine({ designation: "", reference: "", quantite: "1", prixTTC: "", deuxOffres: false, fournisseur1: "", dateDispo1: "Sur place", reference2: "", prixTTC2: "", fournisseur2: "", dateDispo2: "", offreChoisie: "offre1" });
   }
 
   function removeDevisLine(id) {
@@ -1432,6 +1472,14 @@ export default function App() {
       reference: line.reference || "",
       quantite: String(line.quantite || "1"),
       prixTTC: String(line.prixTTC || ""),
+      deuxOffres: Boolean(line.deuxOffres),
+      fournisseur1: line.fournisseur1 || "",
+      dateDispo1: line.dateDispo1 || "Sur place",
+      reference2: line.reference2 || "",
+      prixTTC2: String(line.prixTTC2 || ""),
+      fournisseur2: line.fournisseur2 || "",
+      dateDispo2: line.dateDispo2 || "",
+      offreChoisie: line.offreChoisie || "offre1",
     });
 
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -1439,7 +1487,7 @@ export default function App() {
 
   function cancelEditDevisLine() {
     setEditingDevisLineId(null);
-    setDevisLine({ designation: "", reference: "", quantite: "1", prixTTC: "" });
+    setDevisLine({ designation: "", reference: "", quantite: "1", prixTTC: "", deuxOffres: false, fournisseur1: "", dateDispo1: "Sur place", reference2: "", prixTTC2: "", fournisseur2: "", dateDispo2: "", offreChoisie: "offre1" });
   }
 
   function duplicateDevisLine(line) {
@@ -1460,7 +1508,7 @@ export default function App() {
   function updateDevisLine(id, field, value) {
     setDevisLines(
       devisLines.map((line) =>
-        line.id === id ? { ...line, [field]: field === "quantite" || field === "prixTTC" ? Number(value || 0) : value } : line
+        line.id === id ? { ...line, [field]: field === "quantite" || field === "prixTTC" || field === "prixTTC2" ? Number(value || 0) : value } : line
       )
     );
   }
@@ -1484,7 +1532,7 @@ export default function App() {
       remiseValue: "",
     });
     setDevisLines([]);
-    setDevisLine({ designation: "", reference: "", quantite: "1", prixTTC: "" });
+    setDevisLine({ designation: "", reference: "", quantite: "1", prixTTC: "", deuxOffres: false, fournisseur1: "", dateDispo1: "Sur place", reference2: "", prixTTC2: "", fournisseur2: "", dateDispo2: "", offreChoisie: "offre1" });
   }
 
   function saveDevis(status = "Brouillon") {
@@ -1524,6 +1572,19 @@ export default function App() {
             ? {
                 ...request,
                 statut: "Devis traité",
+                client: devisForm.client || request.client || "",
+                telephone: devisForm.telephone || request.telephone || "",
+                plaque: devisForm.plaque || request.plaque || "",
+                vin: devisForm.vin || request.vin || "",
+                marque: devisForm.marque || request.marque || "",
+                modele: devisForm.modele || request.modele || "",
+                devisNumero: numero,
+                devisId: savedDevis.id,
+                devisLignes: devisLines,
+                devisTotalTTC: devisTotals.totalTTC,
+                devisTotalHT: devisTotals.totalHT,
+                devisTVA: devisTotals.tva,
+                notesInternes: devisForm.notesInternes || request.notesInternes || "",
                 updatedAt: new Date().toLocaleString("fr-FR"),
                 updatedBy: currentUser?.name || "-",
               }
@@ -1532,7 +1593,7 @@ export default function App() {
       );
 
       addHistory(
-        "Client rappelé après devis",
+        "Cahier mis à jour après devis",
         `${devisForm.client || "-"} — ${Number(devisTotals.totalTTC || 0).toFixed(2)} €`
       );
     }
@@ -3278,9 +3339,35 @@ export default function App() {
 
                 <form className="form" onSubmit={addManualLineToDevis}>
                   <input name="designation" value={devisLine.designation} onChange={changeDevisLine} placeholder="Désignation pièce" />
-                  <input name="reference" value={devisLine.reference} onChange={changeDevisLine} placeholder="Référence interne" />
+                  <input name="reference" value={devisLine.reference} onChange={changeDevisLine} placeholder="Référence offre 1" />
                   <input name="quantite" value={devisLine.quantite} onChange={changeDevisLine} placeholder="Quantité" />
-                  <input name="prixTTC" value={devisLine.prixTTC} onChange={changeDevisLine} placeholder="Prix TTC" />
+                  <input name="prixTTC" value={devisLine.prixTTC} onChange={changeDevisLine} placeholder="Prix TTC offre 1" />
+                  <input name="fournisseur1" value={devisLine.fournisseur1 || ""} onChange={changeDevisLine} placeholder="Fournisseur offre 1" />
+                  <input name="dateDispo1" value={devisLine.dateDispo1 || ""} onChange={changeDevisLine} placeholder="Disponibilité offre 1 ex: sur place" />
+
+                  <label style={{ display: "flex", alignItems: "center", gap: "10px", fontWeight: "900", color: "#123f8f" }}>
+                    <input
+                      type="checkbox"
+                      checked={Boolean(devisLine.deuxOffres)}
+                      onChange={(e) => setDevisLine({ ...devisLine, deuxOffres: e.target.checked })}
+                      style={{ width: "18px", height: "18px" }}
+                    />
+                    Ajouter une 2ème offre fournisseur
+                  </label>
+
+                  {devisLine.deuxOffres && (
+                    <>
+                      <input name="reference2" value={devisLine.reference2 || ""} onChange={changeDevisLine} placeholder="Référence offre 2" />
+                      <input name="prixTTC2" value={devisLine.prixTTC2 || ""} onChange={changeDevisLine} placeholder="Prix TTC offre 2" />
+                      <input name="fournisseur2" value={devisLine.fournisseur2 || ""} onChange={changeDevisLine} placeholder="Fournisseur offre 2" />
+                      <input name="dateDispo2" value={devisLine.dateDispo2 || ""} onChange={changeDevisLine} placeholder="Disponibilité offre 2 ex: sous 48h" />
+                      <select name="offreChoisie" value={devisLine.offreChoisie || "offre1"} onChange={changeDevisLine}>
+                        <option value="offre1">Total avec offre 1</option>
+                        <option value="offre2">Total avec offre 2</option>
+                      </select>
+                    </>
+                  )}
+
                   <button>{editingDevisLineId ? "Enregistrer modification" : "Ajouter au devis"}</button>
                   {editingDevisLineId && <button type="button" onClick={cancelEditDevisLine}>Annuler</button>}
                 </form>
@@ -3308,15 +3395,39 @@ export default function App() {
                           <td style={{ padding: "12px", fontWeight: "900" }}>{index + 1}</td>
                           <td style={{ padding: "12px" }}>{line.designation}</td>
                           <td style={{ padding: "12px" }}>
-                            <input value={line.reference || ""} onChange={(e) => updateDevisLine(line.id, "reference", e.target.value)} placeholder="Référence" style={{ width: "140px", border: "1px solid #bfd4ff", borderRadius: "10px", height: "36px", padding: "0 10px" }} />
+                            <input value={line.reference || ""} onChange={(e) => updateDevisLine(line.id, "reference", e.target.value)} placeholder="Réf. offre 1" style={{ width: "130px", border: "1px solid #bfd4ff", borderRadius: "10px", height: "36px", padding: "0 10px" }} />
+                            {line.deuxOffres && (
+                              <input value={line.reference2 || ""} onChange={(e) => updateDevisLine(line.id, "reference2", e.target.value)} placeholder="Réf. offre 2" style={{ width: "130px", border: "1px solid #bfd4ff", borderRadius: "10px", height: "36px", padding: "0 10px", marginTop: "6px" }} />
+                            )}
                           </td>
                           <td style={{ padding: "12px" }}>
                             <input value={line.quantite} onChange={(e) => updateDevisLine(line.id, "quantite", e.target.value)} style={{ width: "70px", border: "1px solid #bfd4ff", borderRadius: "10px", height: "36px", padding: "0 10px" }} />
                           </td>
                           <td style={{ padding: "12px" }}>
-                            <input value={line.prixTTC} onChange={(e) => updateDevisLine(line.id, "prixTTC", e.target.value)} placeholder="Prix" style={{ width: "90px", border: "1px solid #bfd4ff", borderRadius: "10px", height: "36px", padding: "0 10px" }} />
+                            <input value={line.prixTTC} onChange={(e) => updateDevisLine(line.id, "prixTTC", e.target.value)} placeholder="Prix offre 1" style={{ width: "90px", border: "1px solid #bfd4ff", borderRadius: "10px", height: "36px", padding: "0 10px" }} />
+                            {line.deuxOffres && (
+                              <>
+                                <input value={line.prixTTC2 || ""} onChange={(e) => updateDevisLine(line.id, "prixTTC2", e.target.value)} placeholder="Prix offre 2" style={{ width: "90px", border: "1px solid #bfd4ff", borderRadius: "10px", height: "36px", padding: "0 10px", marginTop: "6px" }} />
+                                <select value={line.offreChoisie || "offre1"} onChange={(e) => updateDevisLine(line.id, "offreChoisie", e.target.value)} style={{ width: "120px", border: "1px solid #bfd4ff", borderRadius: "10px", height: "36px", padding: "0 8px", marginTop: "6px" }}>
+                                  <option value="offre1">Choisir offre 1</option>
+                                  <option value="offre2">Choisir offre 2</option>
+                                </select>
+                              </>
+                            )}
                           </td>
-                          <td style={{ padding: "12px", fontWeight: "900" }}>{(Number(line.quantite) * Number(line.prixTTC)).toFixed(2)} €</td>
+                          <td style={{ padding: "12px", fontWeight: "900" }}>
+                            {line.deuxOffres ? (
+                              <div>
+                                <div>Offre 1 : {(Number(line.quantite) * Number(line.prixTTC || 0)).toFixed(2)} €</div>
+                                <div>Offre 2 : {(Number(line.quantite) * Number(line.prixTTC2 || 0)).toFixed(2)} €</div>
+                                <div style={{ color: "#123f8f", marginTop: "6px" }}>
+                                  Total choisi : {getLineTotal(line).toFixed(2)} €
+                                </div>
+                              </div>
+                            ) : (
+                              `${getLineTotal(line).toFixed(2)} €`
+                            )}
+                          </td>
                           <td style={{ padding: "12px" }}>
                             <div className="actions">
                               <button onClick={() => editDevisLine(line)}>Modifier</button>
@@ -3354,10 +3465,19 @@ export default function App() {
                 </div>
               </div>
 
-              {devis.length === 0 && <div className="empty">Aucun devis enregistré.</div>}
+              <section className="searchLine" style={{ marginBottom: "14px" }}>
+                <span>🔎</span>
+                <input
+                  value={devisSearch}
+                  onChange={(e) => setDevisSearch(e.target.value)}
+                  placeholder="Rechercher un devis : plaque, VIN, nom client, téléphone, numéro..."
+                />
+              </section>
+
+              {filteredDevis.length === 0 && <div className="empty">Aucun devis trouvé.</div>}
 
               <div className="historyList">
-                {devis.map((d) => (
+                {filteredDevis.map((d) => (
                   <div className="historyItem clickable" key={d.id} onClick={() => setSelectedDevis(d)}>
                     <strong>{d.numero} — {d.client}</strong>
                     <p>{d.marque} {d.modele} — Plaque : {d.plaque || "-"} — VIN : {d.vin || "-"}</p>
@@ -3717,7 +3837,7 @@ export default function App() {
             <div className="historyList" style={{ marginTop: "18px" }}>
               {selectedDevis.lignes.map((l) => (
                 <div className="historyItem" key={l.id}>
-                  <strong>{l.designation}</strong><p>Qté : {l.quantite} — Prix TTC : {Number(l.prixTTC).toFixed(2)} €</p><span>Référence interne : {l.reference || "-"}</span>
+                  <strong>{l.designation}</strong><p>Qté : {l.quantite} — Prix TTC : {(l.deuxOffres && l.offreChoisie === "offre2" ? Number(l.prixTTC2 || 0) : Number(l.prixTTC || 0)).toFixed(2)} €</p><span>Référence interne : {l.reference || "-"}</span>
                 </div>
               ))}
             </div>
