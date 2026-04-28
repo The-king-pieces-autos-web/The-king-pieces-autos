@@ -1361,6 +1361,34 @@ export default function App() {
     return `DV-${year}-${String(nextNumber).padStart(5, "0")}`;
   }
 
+
+  function getLineUnitPrice(line) {
+    if (line?.deuxOffres && line?.offreChoisie === "offre2") {
+      return Number(line.prixTTC2 || 0);
+    }
+    return Number(line?.prixTTC || 0);
+  }
+
+  function getLineTotal(line) {
+    return Number(line?.quantite || 0) * getLineUnitPrice(line);
+  }
+
+  function toggleLineConfirmedByClient(lineId) {
+    setDevisLines((prev) =>
+      prev.map((line) =>
+        line.id === lineId ? { ...line, confirmedByClient: !line.confirmedByClient } : line
+      )
+    );
+  }
+
+  function selectAllLinesConfirmedByClient() {
+    setDevisLines((prev) => prev.map((line) => ({ ...line, confirmedByClient: true })));
+  }
+
+  function clearLinesConfirmedByClient() {
+    setDevisLines((prev) => prev.map((line) => ({ ...line, confirmedByClient: false })));
+  }
+
   function addHistory(action, details) {
     setHistory((prev) => [
       {
