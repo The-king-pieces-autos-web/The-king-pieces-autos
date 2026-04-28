@@ -1343,6 +1343,15 @@ export default function App() {
     return { sousTotalTTC, sousTotalHT, remiseTTC, remiseHT, totalTTC, totalHT, tva };
   }, [devisLines, devisForm.remiseType, devisForm.remiseValue]);
 
+
+  const filteredDevis = useMemo(() => {
+    const q = String(devisSearch || "").toLowerCase().trim();
+    return (devis || []).filter((d) => {
+      const txt = `${d.numero || ""} ${d.client || ""} ${d.telephone || ""} ${d.plaque || ""} ${d.vin || ""} ${d.marque || ""} ${d.modele || ""} ${d.status || ""}`.toLowerCase();
+      return !q || txt.includes(q);
+    });
+  }, [devis, devisSearch]);
+
   function nextDevisNumero() {
     const year = new Date().getFullYear();
     const allNumbers = devis.map((d) => d.numero).filter(Boolean);
