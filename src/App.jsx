@@ -1277,18 +1277,96 @@ export default function App() {
     startApp();
   }, []);
 
+  // Synchronisation automatique multi-PC
+  // Fiable pour le magasin : écoute Supabase Realtime + recharge silencieuse toutes les 5 secondes.
+  useEffect(() => {
+    if (!appLoaded || !connected) return;
+
+    let cancelled = false;
+    let refreshing = false;
+    let refreshTimer = null;
+
+    async function refreshLiveData() {
+      if (refreshing || cancelled) return;
+      refreshing = true;
+
+      try {
+        const [liveStock, liveDevis, liveClients, usersResult] = await Promise.all([
+          loadStockItemsFromDb(),
+          loadDevisFromDb(),
+          loadClientsFromDb(),
+          supabase.from("users_app").select("*").order("id", { ascending: true }),
+        ]);
+
+        if (cancelled) return;
+
+        if (Array.isArray(liveStock)) setPieces(liveStock);
+        if (Array.isArray(liveDevis)) setDevis(liveDevis);
+        if (Array.isArray(liveClients)) {
+          setClients(liveClients);
+          setSelectedClient((current) => {
+            if (!current) return current;
+            return liveClients.find((client) => String(client.id) === String(current.id)) || current;
+          });
+        }
+
+        if (!usersResult.error && Array.isArray(usersResult.data) && usersResult.data.length) {
+          setUsers(usersResult.data);
+          setCurrentUser((current) => {
+            if (!current) return current;
+            return usersResult.data.find((u) => u.id === current.id || u.login === current.login) || current;
+          });
+        }
+      } catch (error) {
+        console.warn("Synchronisation automatique impossible", error);
+      } finally {
+        refreshing = false;
+      }
+    }
+
+    function scheduleRefresh() {
+      clearTimeout(refreshTimer);
+      refreshTimer = setTimeout(refreshLiveData, 500);
+    }
+
+    const channel = supabase
+      .channel("king-live-sync")
+      .on("postgres_changes", { event: "*", schema: "public", table: "stock_items" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "devis" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "clients" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "client_pieces" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "client_paiements" }, scheduleRefresh)
+      .on("postgres_changes", { event: "*", schema: "public", table: "users_app" }, scheduleRefresh)
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          console.info("Synchronisation temps réel active");
+        }
+      });
+
+    const interval = setInterval(refreshLiveData, 5000);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(refreshTimer);
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
+  }, [appLoaded, connected]);
+
   useEffect(() => {
     if (!appLoaded) return;
 
     const payload = {
       users,
-      pieces: normalizePieces(pieces),
+      // Les grosses données professionnelles sont maintenant dans leurs vraies tables Supabase.
+      // On évite de réécrire un énorme app_state à chaque synchronisation automatique.
+      pieces: [],
       history,
       manualOrders,
       orderedAutoIds,
       orderArchives,
-      devis,
-      clients,
+      devis: [],
+      clients: [],
       savedAt: new Date().toISOString(),
     };
 
@@ -1296,7 +1374,7 @@ export default function App() {
     saveAppState(payload).catch((error) => {
       console.error("Sauvegarde Supabase impossible", error);
     });
-  }, [appLoaded, users, pieces, history, manualOrders, orderedAutoIds, orderArchives, devis, clients]);
+  }, [appLoaded, users, history, manualOrders, orderedAutoIds, orderArchives]);
 
   useEffect(() => {
     if (selectedClient) {
@@ -1304,88 +1382,6 @@ export default function App() {
       if (freshClient) setSelectedClient(freshClient);
     }
   }, [clients]);
-
-  useEffect(() => {
-    if (!appLoaded || !connected) return;
-
-    const timers = {};
-
-    const schedule = (key, fn, delay = 350) => {
-      if (timers[key]) clearTimeout(timers[key]);
-      timers[key] = setTimeout(fn, delay);
-    };
-
-    const refreshStock = async () => {
-      const dbStock = await loadStockItemsFromDb();
-      if (Array.isArray(dbStock)) setPieces(dbStock);
-    };
-
-    const refreshDevis = async () => {
-      const dbDevis = await loadDevisFromDb();
-      if (Array.isArray(dbDevis)) setDevis(dbDevis);
-    };
-
-    const refreshClients = async () => {
-      const dbClients = await loadClientsFromDb();
-      if (Array.isArray(dbClients)) {
-        setClients(dbClients);
-        setSelectedClient((previousClient) => {
-          if (!previousClient) return previousClient;
-          return dbClients.find((client) => String(client.id) === String(previousClient.id)) || previousClient;
-        });
-      }
-    };
-
-    const refreshUsers = async () => {
-      const { data, error } = await supabase
-        .from("users_app")
-        .select("*")
-        .order("id", { ascending: true });
-
-      if (!error && Array.isArray(data)) {
-        setUsers(data);
-
-        setCurrentUser((previousUser) => {
-          if (!previousUser) return previousUser;
-          const freshUser = data.find((u) => u.id === previousUser.id || u.login === previousUser.login);
-          if (freshUser) {
-            localStorage.setItem("king_current_user", JSON.stringify(freshUser));
-            return freshUser;
-          }
-          return previousUser;
-        });
-      }
-    };
-
-    const channel = supabase
-      .channel("the-king-pieces-autos-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "stock_items" }, () => {
-        schedule("stock_items", refreshStock);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "devis" }, () => {
-        schedule("devis", refreshDevis);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "clients" }, () => {
-        schedule("clients", refreshClients);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "client_pieces" }, () => {
-        schedule("client_pieces", refreshClients);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "client_paiements" }, () => {
-        schedule("client_paiements", refreshClients);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "users_app" }, () => {
-        schedule("users_app", refreshUsers);
-      })
-      .subscribe((status) => {
-        console.log("Synchro temps réel Supabase :", status);
-      });
-
-    return () => {
-      Object.values(timers).forEach((timer) => clearTimeout(timer));
-      supabase.removeChannel(channel);
-    };
-  }, [appLoaded, connected]);
 
   const ruptures = pieces.filter((p) => Number(p.quantite) < Number(p.rupture));
 
