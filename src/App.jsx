@@ -337,12 +337,11 @@ export default function App() {
     };
   }
 
-  async function loadStockItemsFromDb(limit = 500) {
+  async function loadStockItemsFromDb() {
     const { data, error } = await supabase
       .from("stock_items")
       .select("*")
-      .order("updated_at", { ascending: false })
-      .limit(limit);
+      .order("updated_at", { ascending: false });
 
     if (error) {
       console.error("Chargement stock_items impossible", error);
@@ -413,12 +412,11 @@ export default function App() {
     };
   }
 
-    async function loadDevisFromDb(limit = 150) {
+    async function loadDevisFromDb() {
     const { data, error } = await supabase
       .from("devis")
       .select("*")
-      .order("updated_at", { ascending: false })
-      .limit(limit);
+      .order("updated_at", { ascending: false });
 
     if (error) {
       console.error("Chargement devis impossible", error);
@@ -849,26 +847,20 @@ export default function App() {
     };
   }
 
-  async function loadClientsFromDb(limit = 150) {
+  async function loadClientsFromDb() {
     const { data: clientRows, error: clientError } = await supabase
       .from("clients")
       .select("*")
-      .order("updated_at", { ascending: false })
-      .limit(limit);
+      .order("updated_at", { ascending: false });
 
     if (clientError) {
       console.error("Chargement clients impossible", clientError);
       return null;
     }
 
-    const clientIds = (clientRows || []).map((client) => client.id);
-
-    if (clientIds.length === 0) return [];
-
     const { data: pieceRows, error: pieceError } = await supabase
       .from("client_pieces")
       .select("*")
-      .in("client_id", clientIds)
       .order("created_at", { ascending: false });
 
     if (pieceError) {
@@ -879,9 +871,7 @@ export default function App() {
     const { data: paiementRows, error: paiementError } = await supabase
       .from("client_paiements")
       .select("*")
-      .in("client_id", clientIds)
-      .order("date_paiement", { ascending: false })
-      .limit(500);
+      .order("date_paiement", { ascending: false });
 
     if (paiementError) {
       console.error("Chargement client_paiements impossible", paiementError);
@@ -895,40 +885,6 @@ export default function App() {
         (paiementRows || []).filter((p) => String(p.client_id) === String(client.id))
       )
     );
-  }
-
-  async function loadUsersFromDb() {
-    const { data, error } = await supabase
-      .from("users_app")
-      .select("*")
-      .order("id", { ascending: true });
-
-    if (error) {
-      console.error("Chargement users_app impossible", error);
-      return null;
-    }
-
-    return data || [];
-  }
-
-  async function reloadUsersFromDb() {
-    const dbUsers = await loadUsersFromDb();
-    if (dbUsers?.length) {
-      setUsers(dbUsers);
-      const savedUser = localStorage.getItem("king_current_user");
-      if (savedUser) {
-        try {
-          const parsedUser = JSON.parse(savedUser);
-          const freshUser = dbUsers.find((u) => u.id === parsedUser.id || u.login === parsedUser.login);
-          if (freshUser) {
-            setCurrentUser(freshUser);
-            localStorage.setItem("king_current_user", JSON.stringify(freshUser));
-          }
-        } catch {
-          // rien
-        }
-      }
-    }
   }
 
   async function reloadClientsFromDb() {
@@ -1322,52 +1278,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    if (!connected || !appLoaded) return;
-
-    const timers = {};
-    const debounceReload = (key, fn) => {
-      window.clearTimeout(timers[key]);
-      timers[key] = window.setTimeout(() => {
-        fn().catch((error) => console.error(`Realtime ${key} impossible`, error));
-      }, 350);
-    };
-
-    const channel = supabase
-      .channel("king-app-realtime")
-      .on("postgres_changes", { event: "*", schema: "public", table: "stock_items" }, () => {
-        debounceReload("stock", reloadStockFromDb);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "devis" }, async () => {
-        debounceReload("devis", async () => {
-          const dbDevis = await loadDevisFromDb();
-          if (Array.isArray(dbDevis)) setDevis(dbDevis);
-        });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "clients" }, () => {
-        debounceReload("clients", reloadClientsFromDb);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "client_pieces" }, () => {
-        debounceReload("clients", reloadClientsFromDb);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "client_paiements" }, () => {
-        debounceReload("clients", reloadClientsFromDb);
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "users_app" }, () => {
-        debounceReload("users", reloadUsersFromDb);
-      })
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          console.log("Synchronisation multi-PC active");
-        }
-      });
-
-    return () => {
-      Object.values(timers).forEach((timer) => window.clearTimeout(timer));
-      supabase.removeChannel(channel);
-    };
-  }, [connected, appLoaded]);
-
-  useEffect(() => {
     if (!appLoaded) return;
 
     const payload = {
@@ -1394,6 +1304,88 @@ export default function App() {
       if (freshClient) setSelectedClient(freshClient);
     }
   }, [clients]);
+
+  useEffect(() => {
+    if (!appLoaded || !connected) return;
+
+    const timers = {};
+
+    const schedule = (key, fn, delay = 350) => {
+      if (timers[key]) clearTimeout(timers[key]);
+      timers[key] = setTimeout(fn, delay);
+    };
+
+    const refreshStock = async () => {
+      const dbStock = await loadStockItemsFromDb();
+      if (Array.isArray(dbStock)) setPieces(dbStock);
+    };
+
+    const refreshDevis = async () => {
+      const dbDevis = await loadDevisFromDb();
+      if (Array.isArray(dbDevis)) setDevis(dbDevis);
+    };
+
+    const refreshClients = async () => {
+      const dbClients = await loadClientsFromDb();
+      if (Array.isArray(dbClients)) {
+        setClients(dbClients);
+        setSelectedClient((previousClient) => {
+          if (!previousClient) return previousClient;
+          return dbClients.find((client) => String(client.id) === String(previousClient.id)) || previousClient;
+        });
+      }
+    };
+
+    const refreshUsers = async () => {
+      const { data, error } = await supabase
+        .from("users_app")
+        .select("*")
+        .order("id", { ascending: true });
+
+      if (!error && Array.isArray(data)) {
+        setUsers(data);
+
+        setCurrentUser((previousUser) => {
+          if (!previousUser) return previousUser;
+          const freshUser = data.find((u) => u.id === previousUser.id || u.login === previousUser.login);
+          if (freshUser) {
+            localStorage.setItem("king_current_user", JSON.stringify(freshUser));
+            return freshUser;
+          }
+          return previousUser;
+        });
+      }
+    };
+
+    const channel = supabase
+      .channel("the-king-pieces-autos-realtime")
+      .on("postgres_changes", { event: "*", schema: "public", table: "stock_items" }, () => {
+        schedule("stock_items", refreshStock);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "devis" }, () => {
+        schedule("devis", refreshDevis);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "clients" }, () => {
+        schedule("clients", refreshClients);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "client_pieces" }, () => {
+        schedule("client_pieces", refreshClients);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "client_paiements" }, () => {
+        schedule("client_paiements", refreshClients);
+      })
+      .on("postgres_changes", { event: "*", schema: "public", table: "users_app" }, () => {
+        schedule("users_app", refreshUsers);
+      })
+      .subscribe((status) => {
+        console.log("Synchro temps réel Supabase :", status);
+      });
+
+    return () => {
+      Object.values(timers).forEach((timer) => clearTimeout(timer));
+      supabase.removeChannel(channel);
+    };
+  }, [appLoaded, connected]);
 
   const ruptures = pieces.filter((p) => Number(p.quantite) < Number(p.rupture));
 
