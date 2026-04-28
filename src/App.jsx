@@ -2118,7 +2118,7 @@ export default function App() {
     };
 
     try {
-      await removeConfirmedStockLinesFromStock();
+      
 
       let savedDevis;
 
